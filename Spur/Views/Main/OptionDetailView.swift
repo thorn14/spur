@@ -98,21 +98,27 @@ private struct OptionWorkspaceView: View {
 
             Divider()
 
-            // ── Preview + Logs ───────────────────────────────────────────
-            VSplitView {
-                // Top: live web preview
-                Group {
-                    if isRunning {
-                        WebPreviewView(url: localURL, store: webViewStore)
-                    } else {
-                        ServerOffPlaceholder(port: option.port)
+            // ── Preview + Logs | Turns panel ────────────────────────────
+            HSplitView {
+                // Left: preview + logs
+                VSplitView {
+                    Group {
+                        if isRunning {
+                            WebPreviewView(url: localURL, store: webViewStore)
+                        } else {
+                            ServerOffPlaceholder(port: option.port)
+                        }
                     }
-                }
-                .frame(minHeight: 120)
+                    .frame(minHeight: 120)
 
-                // Bottom: log console
-                LogOutputView(lines: optionViewModel.currentLogs)
-                    .frame(minHeight: 60)
+                    LogOutputView(lines: optionViewModel.currentLogs)
+                        .frame(minHeight: 60)
+                }
+                .frame(minWidth: 300)
+
+                // Right: turns panel
+                TurnListView()
+                    .frame(minWidth: 220, maxWidth: 300)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

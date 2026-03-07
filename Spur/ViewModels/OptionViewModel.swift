@@ -172,7 +172,103 @@ final class OptionViewModel: ObservableObject {
         devServer.stopAll()
     }
 
+    // MARK: - Turn management
+
+    /// Returns turns for the given option, ordered by creation date.
+    func turns(for optionId: UUID) -> [Turn] {
+        repoViewModel.appState?.options
+            .first { $0.id == optionId }?.turns ?? []
+    }
+
+    /// Starts a new Turn for the selected option by recording the current HEAD commit.
+    func startTurn() async {
+        guard let option = selectedOption else { return }
+        isLoading = true
+        error = nil
+        defer { isLoading = false }
+
+        do {
+            let head = try await git.getCurrentHead(worktreePath: option.worktreePath)
+            let number = option.turns.count + 1
+            let turn = Turn(number: number, label: "Turn \(number)", startCommit: head)
+            appendTurn(turn, to: option.id)
+            logger.info("Started turn \(number) at \(head) for option \(option.id)")
+        } catch {
+            self.error = error
+            logger.error("startTurn failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Captures a checkpoint for the given turn:
+    /// commits any dirty changes, records the commit range, pushes the branch.
+    func captureCheckpoint(turn: Turn) async {
+        guard let option = selectedOption else { return }
+        isLoading = true
+        error = nil
+        defer { isLoading = false }
+
+        do {
+            // 1. Auto-commit dirty changes
+            if try await git.hasUncommittedChanges(worktreePath: option.worktreePath) {
+                _ = try await git.commitAll(
+                    worktreePath: option.worktreePath,
+                    message: "[spur] Checkpoint: \(turn.label)"
+                )
+            }
+
+            // 2. Collect commits since turn start
+            let commits = try await git.getCommitsSince(
+                hash: turn.startCommit,
+                worktreePath: option.worktreePath
+            )
+            let endCommit = try await git.getCurrentHead(worktreePath: option.worktreePath)
+
+            // 3. Update turn
+            updateTurn(turn.id, in: option.id) { t in
+                t.endCommit = endCommit
+                t.commitRange = commits
+            }
+
+            // 4. Push branch (Rule A)
+            do {
+                try await git.push(repoPath: option.worktreePath, branch: option.branchName)
+            } catch {
+                logger.error("Push after checkpoint failed: \(error.localizedDescription)")
+            }
+
+            logger.info("Captured checkpoint for turn \(turn.number): \(endCommit)")
+        } catch {
+            self.error = error
+            logger.error("captureCheckpoint failed: \(error.localizedDescription)")
+        }
+    }
+
+    /// Creates a new Option branched from `turn.endCommit` in the given experiment.
+    func forkFromCheckpoint(turn: Turn, name: String, experiment: Experiment) async {
+        guard let endCommit = turn.endCommit else {
+            logger.error("forkFromCheckpoint: turn has no endCommit")
+            return
+        }
+        await createOption(name: name, experiment: experiment, source: .commit(endCommit))
+    }
+
     // MARK: - Private helpers
+
+    private func appendTurn(_ turn: Turn, to optionId: UUID) {
+        guard let idx = repoViewModel.appState?.options.firstIndex(where: { $0.id == optionId }) else { return }
+        repoViewModel.appState?.options[idx].turns.append(turn)
+        repoViewModel.persistState()
+        objectWillChange.send()
+    }
+
+    private func updateTurn(_ turnId: UUID, in optionId: UUID, mutation: (inout Turn) -> Void) {
+        guard let optIdx = repoViewModel.appState?.options.firstIndex(where: { $0.id == optionId }),
+              let turnIdx = repoViewModel.appState?.options[optIdx].turns.firstIndex(where: { $0.id == turnId })
+        else { return }
+        mutation(&repoViewModel.appState!.options[optIdx].turns[turnIdx])
+        repoViewModel.persistState()
+        objectWillChange.send()
+    }
 
     private func updateOptionStatus(_ id: UUID, status: OptionStatus) {
         guard let idx = repoViewModel.appState?.options.firstIndex(where: { $0.id == id }) else { return }
