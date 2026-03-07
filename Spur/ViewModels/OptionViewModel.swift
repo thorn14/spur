@@ -38,15 +38,25 @@ final class OptionViewModel: ObservableObject {
     private let repoViewModel: RepoViewModel
     private let git: GitService
     private let devServer: DevServerService
+    private let prService: PRService
+    private let terminalService: TerminalService
     private var currentExperimentId: UUID?
     private var cancellables = Set<AnyCancellable>()
     /// Active streaming tasks, one per running option.
     private var streamingTasks: [UUID: Task<Void, Never>] = [:]
 
-    init(repoViewModel: RepoViewModel, git: GitService, devServer: DevServerService) {
+    init(
+        repoViewModel: RepoViewModel,
+        git: GitService,
+        devServer: DevServerService,
+        prService: PRService = PRService(),
+        terminalService: TerminalService = TerminalService()
+    ) {
         self.repoViewModel = repoViewModel
         self.git = git
         self.devServer = devServer
+        self.prService = prService
+        self.terminalService = terminalService
         // Forward AppState mutations so views re-render when options list changes.
         repoViewModel.$appState
             .sink { [weak self] _ in self?.objectWillChange.send() }
@@ -170,6 +180,43 @@ final class OptionViewModel: ObservableObject {
     /// Stops all running servers (called on app termination).
     func stopAllServers() {
         devServer.stopAll()
+    }
+
+    // MARK: - PR creation
+
+    /// Creates a PR for `option` and persists the result URL.
+    @discardableResult
+    func createPR(for option: SpurOption, title: String, body: String) async throws -> String {
+        guard let repoPath = repoViewModel.currentRepo?.path else {
+            throw PRServiceError.remoteNotFound
+        }
+        let url = try await prService.createPR(
+            repoPath: repoPath,
+            branch: option.branchName,
+            title: title,
+            body: body
+        )
+        // Persist URL on option
+        if let idx = repoViewModel.appState?.options.firstIndex(where: { $0.id == option.id }) {
+            repoViewModel.appState?.options[idx].prURL = url
+        }
+        repoViewModel.persistState()
+        objectWillChange.send()
+        logger.info("PR created: \(url)")
+        return url
+    }
+
+    // MARK: - Terminal
+
+    /// Opens Terminal.app at the selected option's worktree path.
+    func openInTerminal() {
+        guard let option = selectedOption else { return }
+        do {
+            try terminalService.openInTerminal(worktreePath: option.worktreePath)
+        } catch {
+            self.error = error
+            logger.error("openInTerminal failed: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Turn management

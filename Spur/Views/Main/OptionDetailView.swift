@@ -14,12 +14,19 @@ struct OptionDetailView: View {
     }
 }
 
-// MARK: - Option workspace (Phase 4)
+// MARK: - Option workspace (Phase 4 + 6)
 
 private struct OptionWorkspaceView: View {
     let option: SpurOption
     @EnvironmentObject var optionViewModel: OptionViewModel
     @StateObject private var webViewStore = WebViewStore()
+    @State private var bottomTab: BottomTab = .logs
+    @State private var showCreatePR = false
+
+    private enum BottomTab: String, CaseIterable {
+        case logs = "Logs"
+        case terminal = "Terminal"
+    }
 
     private var localURL: URL {
         URL(string: "http://localhost:\(option.port)") ?? URL(string: "about:blank")!
@@ -56,7 +63,7 @@ private struct OptionWorkspaceView: View {
 
                 Divider().frame(height: 18)
 
-                // Reload button (only when running)
+                // Reload preview
                 Button {
                     webViewStore.reload()
                 } label: {
@@ -75,6 +82,26 @@ private struct OptionWorkspaceView: View {
                 .buttonStyle(.plain)
                 .help("Open in browser")
                 .disabled(!isRunning)
+
+                // Open in Terminal
+                Button {
+                    optionViewModel.openInTerminal()
+                } label: {
+                    Image(systemName: "terminal")
+                }
+                .buttonStyle(.plain)
+                .help("Open worktree in Terminal")
+
+                Divider().frame(height: 18)
+
+                // Create PR
+                Button {
+                    showCreatePR = true
+                } label: {
+                    Image(systemName: "arrow.triangle.pull")
+                }
+                .buttonStyle(.plain)
+                .help("Create Pull Request")
 
                 Divider().frame(height: 18)
 
@@ -98,10 +125,11 @@ private struct OptionWorkspaceView: View {
 
             Divider()
 
-            // ── Preview + Logs | Turns panel ────────────────────────────
+            // ── Preview + Bottom panel | Turns panel ────────────────────
             HSplitView {
-                // Left: preview + logs
+                // Left: preview + logs/terminal
                 VSplitView {
+                    // Top: live web preview
                     Group {
                         if isRunning {
                             WebPreviewView(url: localURL, store: webViewStore)
@@ -111,8 +139,33 @@ private struct OptionWorkspaceView: View {
                     }
                     .frame(minHeight: 120)
 
-                    LogOutputView(lines: optionViewModel.currentLogs)
-                        .frame(minHeight: 60)
+                    // Bottom: tabbed logs / terminal
+                    VStack(spacing: 0) {
+                        // Tab bar
+                        HStack {
+                            Picker("", selection: $bottomTab) {
+                                ForEach(BottomTab.allCases, id: \.self) {
+                                    Text($0.rawValue).tag($0)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .fixedSize()
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            Spacer()
+                        }
+                        .background(Color(NSColor.controlBackgroundColor))
+
+                        Divider()
+
+                        switch bottomTab {
+                        case .logs:
+                            LogOutputView(lines: optionViewModel.currentLogs)
+                        case .terminal:
+                            CommandRunnerView(worktreePath: option.worktreePath)
+                        }
+                    }
+                    .frame(minHeight: 80)
                 }
                 .frame(minWidth: 300)
 
@@ -122,6 +175,9 @@ private struct OptionWorkspaceView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .sheet(isPresented: $showCreatePR) {
+            CreatePRSheet(option: option)
+        }
     }
 }
 
