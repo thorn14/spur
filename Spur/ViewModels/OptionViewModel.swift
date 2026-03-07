@@ -40,6 +40,7 @@ final class OptionViewModel: ObservableObject {
     private let devServer: DevServerService
     private let prService: PRService
     private let terminalService: TerminalService
+    private let reconciliationService: ReconciliationService
     private var currentExperimentId: UUID?
     private var cancellables = Set<AnyCancellable>()
     /// Active streaming tasks, one per running option.
@@ -50,13 +51,15 @@ final class OptionViewModel: ObservableObject {
         git: GitService,
         devServer: DevServerService,
         prService: PRService = PRService(),
-        terminalService: TerminalService = TerminalService()
+        terminalService: TerminalService = TerminalService(),
+        reconciliationService: ReconciliationService? = nil
     ) {
         self.repoViewModel = repoViewModel
         self.git = git
         self.devServer = devServer
         self.prService = prService
         self.terminalService = terminalService
+        self.reconciliationService = reconciliationService ?? ReconciliationService(git: git)
         // Forward AppState mutations so views re-render when options list changes.
         repoViewModel.$appState
             .sink { [weak self] _ in self?.objectWillChange.send() }
@@ -180,6 +183,21 @@ final class OptionViewModel: ObservableObject {
     /// Stops all running servers (called on app termination).
     func stopAllServers() {
         devServer.stopAll()
+    }
+
+    // MARK: - Reconciliation
+
+    /// Compares persisted options against `git worktree list` and marks missing ones `.detached`.
+    /// Called once on app launch after the repo state is loaded.
+    func reconcileWorktrees() async {
+        guard var state = repoViewModel.appState else { return }
+        let changed = await reconciliationService.reconcile(appState: &state)
+        if changed > 0 {
+            repoViewModel.appState = state
+            repoViewModel.persistState()
+            objectWillChange.send()
+            logger.info("Reconciliation marked \(changed) option(s) detached")
+        }
     }
 
     // MARK: - PR creation
