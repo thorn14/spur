@@ -5,78 +5,140 @@ struct OptionDetailView: View {
 
     var body: some View {
         if let option = optionViewModel.selectedOption {
-            OptionInfoView(option: option)
+            // .id resets WebViewStore + scroll state when switching options
+            OptionWorkspaceView(option: option)
+                .id(option.id)
         } else {
             EmptyOptionView()
         }
     }
 }
 
-// MARK: - Option info (Phase 3)
+// MARK: - Option workspace (Phase 4)
 
-private struct OptionInfoView: View {
+private struct OptionWorkspaceView: View {
     let option: SpurOption
+    @EnvironmentObject var optionViewModel: OptionViewModel
+    @StateObject private var webViewStore = WebViewStore()
+
+    private var localURL: URL {
+        URL(string: "http://localhost:\(option.port)") ?? URL(string: "about:blank")!
+    }
+
+    private var isRunning: Bool {
+        optionViewModel.isServerRunning(option.id)
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                // Header bar
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(option.name)
-                            .font(.title2).fontWeight(.semibold)
-                        Text(option.branchName)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    PortBadge(port: option.port)
-                    StatusBadge(status: option.status)
-                }
-                .padding()
-
-                Divider()
-
-                // Info rows
-                VStack(alignment: .leading, spacing: 12) {
-                    InfoRow(label: "Worktree", systemImage: "folder", value: option.worktreePath)
-
-                    if let prURL = option.prURL, let url = URL(string: prURL) {
-                        HStack(alignment: .top, spacing: 8) {
-                            Label("Pull Request", systemImage: "arrow.triangle.pull")
-                                .foregroundColor(.secondary)
-                                .frame(width: 120, alignment: .leading)
-                            Link(prURL, destination: url)
-                                .font(.caption)
-                                .lineLimit(1)
-                        }
-                    }
-
-                    if let forked = option.forkedFromCommit {
-                        InfoRow(label: "Forked from", systemImage: "arrow.branch", value: String(forked.prefix(12)))
-                    }
-                }
-                .padding()
-
-                Divider()
-
-                // Phase 4 preview placeholder
-                VStack(spacing: 12) {
-                    Image(systemName: "play.circle")
-                        .font(.system(size: 44))
+        VStack(spacing: 0) {
+            // ── Control bar ──────────────────────────────────────────────
+            HStack(spacing: 8) {
+                // Option name + branch
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(option.name)
+                        .font(.headline)
+                    Text(option.branchName)
+                        .font(.system(.caption2, design: .monospaced))
                         .foregroundColor(.secondary)
-                    Text("Live preview available in Phase 4")
-                        .foregroundColor(.secondary)
-                    Text("Start the dev server to see the app running at http://localhost:\(option.port)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(40)
+
+                Spacer()
+
+                // Port badge
+                Text(":\(option.port)")
+                    .font(.system(.caption, design: .monospaced))
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(Color.secondary.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+
+                // Status badge
+                StatusBadge(status: option.status)
+
+                Divider().frame(height: 18)
+
+                // Reload button (only when running)
+                Button {
+                    webViewStore.reload()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                }
+                .buttonStyle(.plain)
+                .help("Reload preview")
+                .disabled(!isRunning)
+
+                // Open in browser
+                Button {
+                    NSWorkspace.shared.open(localURL)
+                } label: {
+                    Image(systemName: "safari")
+                }
+                .buttonStyle(.plain)
+                .help("Open in browser")
+                .disabled(!isRunning)
+
+                Divider().frame(height: 18)
+
+                // Start / Stop
+                if isRunning {
+                    Button("Stop") {
+                        Task { await optionViewModel.stopServer() }
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
+                } else {
+                    Button("Start") {
+                        optionViewModel.startServer()
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(NSColor.windowBackgroundColor))
+
+            Divider()
+
+            // ── Preview + Logs ───────────────────────────────────────────
+            VSplitView {
+                // Top: live web preview
+                Group {
+                    if isRunning {
+                        WebPreviewView(url: localURL, store: webViewStore)
+                    } else {
+                        ServerOffPlaceholder(port: option.port)
+                    }
+                }
+                .frame(minHeight: 120)
+
+                // Bottom: log console
+                LogOutputView(lines: optionViewModel.currentLogs)
+                    .frame(minHeight: 60)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Server-off placeholder
+
+private struct ServerOffPlaceholder: View {
+    let port: Int
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "play.circle")
+                .font(.system(size: 44))
+                .foregroundColor(.secondary)
+            Text("Dev server is not running")
+                .font(.headline)
+                .foregroundColor(.secondary)
+            Text("Press Start to launch the server at http://localhost:\(port)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(NSColor.controlBackgroundColor))
     }
 }
 
@@ -100,36 +162,7 @@ private struct EmptyOptionView: View {
     }
 }
 
-// MARK: - Sub-components
-
-private struct InfoRow: View {
-    let label: String
-    let systemImage: String
-    let value: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Label(label, systemImage: systemImage)
-                .foregroundColor(.secondary)
-                .frame(width: 120, alignment: .leading)
-            Text(value)
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
-                .lineLimit(2)
-        }
-    }
-}
-
-private struct PortBadge: View {
-    let port: Int
-    var body: some View {
-        Text(":\(port)")
-            .font(.system(.caption, design: .monospaced))
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(Color.secondary.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-    }
-}
+// MARK: - Status badge
 
 private struct StatusBadge: View {
     let status: OptionStatus

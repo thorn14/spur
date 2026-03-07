@@ -11,6 +11,11 @@ struct SpurApp: App {
                 .environmentObject(env.experimentViewModel)
                 .environmentObject(env.optionViewModel)
                 .task { await env.repoViewModel.loadLastRepo() }
+                .onReceive(
+                    NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
+                ) { _ in
+                    env.optionViewModel.stopAllServers()
+                }
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
