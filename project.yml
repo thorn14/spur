@@ -1,0 +1,63 @@
+# XcodeGen project spec for Spur
+# Run `xcodegen generate` on your Mac to produce Spur.xcodeproj
+# Install xcodegen: brew install xcodegen
+
+name: Spur
+options:
+  bundleIdPrefix: com.spur
+  deploymentTarget:
+    macOS: "13.0"
+  xcodeVersion: "15.0"
+  generateEmptyDirectories: true
+  defaultConfig: Debug
+
+settings:
+  SWIFT_VERSION: "5.9"
+  MACOSX_DEPLOYMENT_TARGET: "13.0"
+  ENABLE_HARDENED_RUNTIME: YES
+
+configs:
+  Debug: debug
+  Release: release
+
+targets:
+  Spur:
+    type: application
+    platform: macOS
+    sources:
+      - path: Spur
+    info:
+      path: Spur/Info.plist
+      properties:
+        CFBundleName: Spur
+        CFBundleDisplayName: Spur
+        CFBundleIdentifier: com.spur.app
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        LSMinimumSystemVersion: "13.0"
+        NSHumanReadableCopyright: ""
+        NSPrincipalClass: NSApplication
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.spur.app
+        INFOPLIST_FILE: Spur/Info.plist
+        CODE_SIGN_STYLE: Automatic
+      configs:
+        Debug:
+          DEBUG_INFORMATION_FORMAT: dwarf
+        Release:
+          DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
+          SWIFT_OPTIMIZATION_LEVEL: "-O"
+
+  SpurTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: SpurTests
+    dependencies:
+      - target: Spur
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.spur.SpurTests
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Spur.app/Contents/MacOS/Spur"
