@@ -173,11 +173,30 @@ final class ProcessRunnerTests: XCTestCase {
 
     // MARK: - Correctness invariants
 
-    /// Verifies that ProcessRunner only ever sets executableURL, never uses shell strings.
-    /// This is a static-analysis invariant; this test documents the contract.
-    func testNoShellStringUsed() {
-        // The real verification is the code review / Reviewer session (agents.md §1).
-        // This test acts as a marker to ensure the invariant is tracked.
-        XCTAssertTrue(true, "ProcessRunner never uses launchPath or shell string construction.")
+    /// Reads ProcessRunner.swift at test time and asserts that banned APIs are absent.
+    /// `launchPath` and `launch()` are the old shell-string APIs; their presence would
+    /// indicate a regression to shell-string process execution.
+    func testNoShellStringUsed() throws {
+        // Locate ProcessRunner.swift relative to this file's directory.
+        let thisFile = URL(fileURLWithPath: #file)
+        let serviceFile = thisFile
+            .deletingLastPathComponent()          // SpurTests/
+            .deletingLastPathComponent()          // repo root
+            .appendingPathComponent("Spur/Services/ProcessRunner.swift")
+
+        let source = try String(contentsOf: serviceFile, encoding: .utf8)
+
+        XCTAssertFalse(
+            source.contains(".launchPath"),
+            "ProcessRunner must not use .launchPath (banned shell-string API)"
+        )
+        XCTAssertFalse(
+            source.contains("process.launch()"),
+            "ProcessRunner must not use Process.launch() (banned shell-string API)"
+        )
+        XCTAssertTrue(
+            source.contains("executableURL"),
+            "ProcessRunner must set executableURL instead of launchPath"
+        )
     }
 }

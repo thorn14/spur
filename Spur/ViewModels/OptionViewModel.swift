@@ -294,11 +294,14 @@ final class OptionViewModel: ObservableObject {
                 t.commitRange = commits
             }
 
-            // 4. Push branch (Rule A)
-            do {
-                try await git.push(repoPath: option.worktreePath, branch: option.branchName)
-            } catch {
-                logger.error("Push after checkpoint failed: \(error.localizedDescription)")
+            // 4. Push branch (Rule A) — pass the main repo path, not the worktree path,
+            // consistent with all other push() call sites in this file.
+            if let repoPath = repoViewModel.currentRepo?.path {
+                do {
+                    try await git.push(repoPath: repoPath, branch: option.branchName)
+                } catch {
+                    logger.error("Push after checkpoint failed: \(error.localizedDescription)")
+                }
             }
 
             logger.info("Captured checkpoint for turn \(turn.number): \(endCommit)")
