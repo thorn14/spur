@@ -38,7 +38,7 @@ final class DevServerService {
     private let serversLock = NSLock()
 
     deinit {
-        stopAll()
+        killAll()
     }
 
     // MARK: - Public API
@@ -160,9 +160,12 @@ final class DevServerService {
 
             logger.info("Dev server started for option \(optionId) pid=\(pid) port=\(port)")
 
-            // Stop server if consumer cancels the stream
+            // Stop server if consumer cancels the stream.
+            // Wrap in Task because onTermination is a synchronous closure.
             continuation.onTermination = { [weak self] _ in
-                self?.terminateGracefully(optionId: optionId)
+                Task { [weak self] in
+                    await self?.terminateGracefully(optionId: optionId)
+                }
             }
         }
     }
@@ -174,7 +177,7 @@ final class DevServerService {
         serversLock.unlock()
 
         guard server != nil else { throw DevServerError.notRunning(optionId) }
-        terminateGracefully(optionId: optionId)
+        await terminateGracefully(optionId: optionId)
     }
 
     func isRunning(optionId: UUID) -> Bool {
@@ -183,20 +186,29 @@ final class DevServerService {
         return servers[optionId] != nil
     }
 
-    /// Stops all running servers. Called on app termination and in `deinit`.
+    /// Stops all running servers. Called on app termination.
+    /// Fires an unstructured Task so the caller does not have to be async.
     func stopAll() {
         serversLock.lock()
         let ids = Array(servers.keys)
         serversLock.unlock()
 
-        for id in ids {
-            terminateGracefully(optionId: id)
+        Task {
+            for id in ids {
+                await terminateGracefully(optionId: id)
+            }
         }
     }
 
     // MARK: - Private helpers
 
-    private func terminateGracefully(optionId: UUID) {
+    /// Sends SIGTERM to the process group, then waits asynchronously for the process
+    /// to exit (up to `Constants.devServerKillTimeout` seconds). If it has not exited
+    /// by then, sends SIGKILL.
+    ///
+    /// The wait is performed on a `DispatchQueue.global` thread via
+    /// `withCheckedContinuation` so that the cooperative thread pool is never blocked.
+    private func terminateGracefully(optionId: UUID) async {
         serversLock.lock()
         let server = servers[optionId]
         serversLock.unlock()
@@ -207,14 +219,36 @@ final class DevServerService {
         kill(-pid, SIGTERM)
         logger.debug("Sent SIGTERM to process group \(pid) (option \(optionId))")
 
-        let deadline = Date(timeIntervalSinceNow: Constants.devServerKillTimeout)
-        while server.process.isRunning && Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.1)
+        // Park the wait on a background thread so we do not consume a cooperative
+        // thread pool thread for up to `devServerKillTimeout` seconds.
+        let didTerminate: Bool = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .utility).async {
+                let deadline = Date(timeIntervalSinceNow: Constants.devServerKillTimeout)
+                while server.process.isRunning && Date() < deadline {
+                    Thread.sleep(forTimeInterval: 0.1)
+                }
+                continuation.resume(returning: !server.process.isRunning)
+            }
         }
 
-        if server.process.isRunning {
+        if !didTerminate {
             kill(-pid, SIGKILL)
-            logger.warning("Sent SIGKILL to process group \(pid) (SIGTERM timed out)")
+            logger.warning("Sent SIGKILL to process group \(pid) (SIGTERM timed out, option \(optionId))")
+        }
+    }
+
+    /// Synchronous force-kill used only from `deinit`, where `async` is unavailable.
+    /// Sends SIGKILL immediately without waiting for graceful exit.
+    private func killAll() {
+        serversLock.lock()
+        let all = servers
+        serversLock.unlock()
+
+        for (optionId, server) in all {
+            guard server.process.isRunning else { continue }
+            let pid = server.process.processIdentifier
+            kill(-pid, SIGKILL)
+            logger.debug("deinit: sent SIGKILL to process group \(pid) (option \(optionId))")
         }
     }
 
