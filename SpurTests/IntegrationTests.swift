@@ -256,6 +256,22 @@ final class IntegrationTests: XCTestCase {
         XCTAssertNil(PRService.parseGitHubOwnerRepo(from: "not-a-url"))
     }
 
+    func testParseRepoNameContainingDotGit() {
+        // Repos whose names contain ".git" as an interior substring must not be corrupted.
+        // e.g. "widget.git-tools" must not become "widget-tools".
+        let https = PRService.parseGitHubOwnerRepo(from: "https://github.com/acme/widget.git-tools.git")
+        XCTAssertEqual(https?.0, "acme")
+        XCTAssertEqual(https?.1, "widget.git-tools")
+
+        let ssh = PRService.parseGitHubOwnerRepo(from: "git@github.com:acme/widget.git-tools.git")
+        XCTAssertEqual(ssh?.0, "acme")
+        XCTAssertEqual(ssh?.1, "widget.git-tools")
+
+        // Without trailing .git suffix the name must also survive intact.
+        let httpsNoSuffix = PRService.parseGitHubOwnerRepo(from: "https://github.com/acme/widget.git-tools")
+        XCTAssertEqual(httpsNoSuffix?.1, "widget.git-tools")
+    }
+
     // MARK: - 5. Error paths
 
     func testGitServiceOnNonGitDirectoryThrows() async throws {

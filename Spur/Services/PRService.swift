@@ -135,10 +135,10 @@ final class PRService {
 
         // HTTPS: https://github.com/owner/repo[.git]
         if url.hasPrefix("https://github.com/") || url.hasPrefix("http://github.com/") {
-            let path = url
+            var path = url
                 .replacingOccurrences(of: "https://github.com/", with: "")
                 .replacingOccurrences(of: "http://github.com/", with: "")
-                .replacingOccurrences(of: ".git", with: "")
+            if path.hasSuffix(".git") { path = String(path.dropLast(4)) }
             let parts = path.split(separator: "/").map(String.init)
             guard parts.count >= 2 else { return nil }
             return (parts[0], parts[1])
@@ -146,9 +146,8 @@ final class PRService {
 
         // SSH: git@github.com:owner/repo[.git]
         if url.hasPrefix("git@github.com:") {
-            let path = url
-                .replacingOccurrences(of: "git@github.com:", with: "")
-                .replacingOccurrences(of: ".git", with: "")
+            var path = url.replacingOccurrences(of: "git@github.com:", with: "")
+            if path.hasSuffix(".git") { path = String(path.dropLast(4)) }
             let parts = path.split(separator: "/").map(String.init)
             guard parts.count >= 2 else { return nil }
             return (parts[0], parts[1])
