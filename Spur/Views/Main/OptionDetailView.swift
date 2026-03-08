@@ -108,7 +108,7 @@ private struct OptionWorkspaceView: View {
                 // Start / Stop
                 if isRunning {
                     Button("Stop") {
-                        Task { await optionViewModel.stopServer() }
+                        optionViewModel.stopServer()
                     }
                     .buttonStyle(.bordered)
                     .tint(.red)

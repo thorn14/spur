@@ -166,13 +166,19 @@ final class OptionViewModel: ObservableObject {
     }
 
     /// Stops the dev server for the currently selected option.
-    func stopServer() async {
+    ///
+    /// Fire-and-forget: returns immediately; shutdown runs in an unstructured Task
+    /// so the @MainActor is never suspended waiting for the (potentially 5-second)
+    /// SIGTERM → SIGKILL drain sequence.
+    func stopServer() {
         guard let option = selectedOption else { return }
-        do {
-            try await devServer.stop(optionId: option.id)
-        } catch {
-            logger.error("Stop server failed: \(error.localizedDescription)")
-            self.error = error
+        Task {
+            do {
+                try await devServer.stop(optionId: option.id)
+            } catch {
+                logger.error("Stop server failed: \(error.localizedDescription)")
+                self.error = error
+            }
         }
     }
 
