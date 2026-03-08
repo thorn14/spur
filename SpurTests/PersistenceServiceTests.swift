@@ -108,6 +108,19 @@ final class PersistenceServiceTests: XCTestCase {
         XCTAssertTrue(ids.contains(repo2.id))
     }
 
+    func testListRepoIdsSortedByModificationDateDescending() throws {
+        let repo1 = Repo(path: "/test/1")
+        let repo2 = Repo(path: "/test/2")
+        try service.save(AppState(repo: repo1))
+        // Guarantee repo2 has a strictly later mtime by touching it after a short delay.
+        Thread.sleep(forTimeInterval: 0.05)
+        try service.save(AppState(repo: repo2))
+
+        let ids = try service.listRepoIds()
+        XCTAssertEqual(ids.first, repo2.id, "Most recently saved repo must be first")
+        XCTAssertEqual(ids.last,  repo1.id)
+    }
+
     func testListRepoIdsExcludesBackupFiles() throws {
         let repo = Repo(path: "/test")
         let url = service.stateFileURL(for: repo.id)

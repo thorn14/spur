@@ -75,13 +75,21 @@ final class PersistenceService {
         }
     }
 
-    /// Returns all repo UUIDs for which a state file exists.
+    /// Returns all repo UUIDs for which a state file exists, sorted by modification
+    /// date descending (most-recently-saved first). This ensures `loadLastRepo()` always
+    /// restores the genuinely last-used repo regardless of filesystem ordering.
     func listRepoIds() throws -> [UUID] {
+        let keys: [URLResourceKey] = [.contentModificationDateKey]
         let contents = try FileManager.default.contentsOfDirectory(
-            at: baseDirectory, includingPropertiesForKeys: nil
+            at: baseDirectory, includingPropertiesForKeys: keys
         )
         return contents
             .filter { $0.pathExtension == "json" && !$0.lastPathComponent.contains("backup") }
+            .sorted {
+                let lhs = (try? $0.resourceValues(forKeys: Set(keys)).contentModificationDate) ?? .distantPast
+                let rhs = (try? $1.resourceValues(forKeys: Set(keys)).contentModificationDate) ?? .distantPast
+                return lhs > rhs
+            }
             .compactMap { UUID(uuidString: $0.deletingPathExtension().lastPathComponent) }
     }
 
