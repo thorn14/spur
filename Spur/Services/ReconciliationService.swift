@@ -38,7 +38,14 @@ final class ReconciliationService {
             return 0
         }
 
-        let livePaths = Set(worktrees.map(\.path))
+        // Resolve symlinks on both sides before comparing. Git reports canonicalized
+        // real paths (e.g. /private/var/…) while persisted paths may retain symlinked
+        // segments (e.g. /var/…), causing false-detached on macOS without normalization.
+        func canonical(_ path: String) -> String {
+            URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        }
+
+        let livePaths = Set(worktrees.map { canonical($0.path) })
         var changedCount = 0
 
         for idx in appState.options.indices {
@@ -47,7 +54,7 @@ final class ReconciliationService {
             // Never mark a running option as detached — the server controls its own lifecycle.
             guard option.status != .running else { continue }
 
-            let pathExists = livePaths.contains(option.worktreePath)
+            let pathExists = livePaths.contains(canonical(option.worktreePath))
 
             if !pathExists && option.status != .detached {
                 appState.options[idx].status = .detached

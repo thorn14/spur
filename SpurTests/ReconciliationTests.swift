@@ -202,6 +202,35 @@ final class ReconciliationTests: XCTestCase {
         XCTAssertEqual(changed, 0)
     }
 
+    // MARK: - Symlink normalization
+
+    /// Git reports canonical real paths (e.g. /private/var/…) while the persisted
+    /// worktreePath may have retained a symlinked prefix (e.g. /var/…). Without
+    /// normalization, the option would be wrongly marked .detached on macOS.
+    func testSymlinkedWorktreePathNotMarkedDetached() async throws {
+        let branch  = "exp/test/symlinked"
+        let realURL = worktreesURL.appendingPathComponent("real-wt")
+        try await git.createBranchAndWorktree(
+            repoPath: repoURL.path,
+            branchName: branch,
+            worktreePath: realURL.path,
+            from: .main("main")
+        )
+
+        // Create a symlink that points to the real worktree directory.
+        let linkURL = worktreesURL.appendingPathComponent("link-wt")
+        try FileManager.default.createSymbolicLink(at: linkURL, withDestinationURL: realURL)
+
+        // Persist the option using the symlinked path — as if the user's repo
+        // was accessed via a symlinked directory segment.
+        var state = makeState(options: [makeOption(worktreePath: linkURL.path)])
+
+        let changed = await service.reconcile(appState: &state)
+
+        XCTAssertEqual(changed, 0, "Symlinked worktree path must not be marked detached")
+        XCTAssertEqual(state.options[0].status, .idle)
+    }
+
     // MARK: - Idempotency
 
     func testReconcileIsIdempotent() async throws {
