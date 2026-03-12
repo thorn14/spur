@@ -17,6 +17,8 @@ enum Constants {
     static let defaultDevCommand = "npm run dev"
     static let devServerPortRange: ClosedRange<Int> = 3001...3999
     static let devServerKillTimeout: TimeInterval = 5.0
+    /// How often (in seconds) the auto-checkpoint timer fires to snapshot uncommitted changes.
+    static let autoCheckpointInterval: TimeInterval = 30.0
 
     /// Package manager for the given repo directory, detected from lockfiles.
     static func packageManager(at repoPath: String) -> PackageManager {

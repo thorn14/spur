@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Displays the turns for the currently selected option.
-/// Shows start/end commits, allows capturing checkpoints, and forking from a checkpoint.
+/// Shows start/end commits and allows forking from a captured checkpoint.
+/// Checkpoints are captured automatically; manual "Capture" is available as an override.
 struct TurnListView: View {
     @EnvironmentObject var optionViewModel: OptionViewModel
     @EnvironmentObject var prototypeViewModel: PrototypeViewModel
@@ -19,20 +20,15 @@ struct TurnListView: View {
         VStack(spacing: 0) {
             // ── Header ──────────────────────────────────────────────────
             HStack {
-                Text("Turns")
+                Text("Checkpoints")
                     .font(.headline)
                     .foregroundColor(SpurColors.textPrimary)
                 Spacer()
-                Button {
-                    Task { await optionViewModel.startTurn() }
-                } label: {
-                    Label("New Turn", systemImage: "plus.circle")
-                        .font(.caption)
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(SpurColors.accent)
-                .disabled(option == nil || optionViewModel.isLoading)
-                .help("Start a new turn (records current HEAD)")
+                // Auto-checkpoint indicator
+                Label("Auto", systemImage: "clock.arrow.2.circlepath")
+                    .font(.caption2)
+                    .foregroundColor(SpurColors.accent)
+                    .help("Checkpoints are captured automatically every \(Int(Constants.autoCheckpointInterval))s")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -42,9 +38,7 @@ struct TurnListView: View {
 
             // ── Turn list ────────────────────────────────────────────────
             if turns.isEmpty {
-                EmptyTurnsView {
-                    Task { await optionViewModel.startTurn() }
-                }
+                EmptyTurnsView()
             } else {
                 List {
                     ForEach(turns) { turn in
@@ -87,10 +81,18 @@ private struct TurnRow: View {
         VStack(alignment: .leading, spacing: 6) {
             // ── Title row ──────────────────────────────────────────────
             HStack {
-                Label(turn.label, systemImage: "arrow.right.circle")
+                Label(turn.label, systemImage: turn.endCommit == nil ? "clock" : "checkmark.circle")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(SpurColors.textPrimary)
+                    .foregroundColor(turn.endCommit == nil ? SpurColors.accent : SpurColors.textPrimary)
                 Spacer()
+                if turn.isAutomatic {
+                    Text("auto")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(SpurColors.textMuted)
+                        .padding(.horizontal, 4).padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
                 Text(turn.createdAt, style: .date)
                     .font(.caption2)
                     .foregroundColor(SpurColors.textSecondary)
@@ -107,21 +109,27 @@ private struct TurnRow: View {
                     Text("(\(turn.commitRange.count) commit\(turn.commitRange.count == 1 ? "" : "s"))")
                         .font(.caption2)
                         .foregroundColor(SpurColors.textSecondary)
+                } else {
+                    Text("recording…")
+                        .font(.caption2)
+                        .foregroundColor(SpurColors.textMuted)
+                        .italic()
                 }
             }
 
             // ── Actions ────────────────────────────────────────────────
             HStack(spacing: 8) {
                 if turn.endCommit == nil {
+                    // Manual capture override
                     Button {
                         Task { await optionViewModel.captureCheckpoint(turn: turn) }
                     } label: {
-                        Label("Capture", systemImage: "camera")
+                        Label("Capture Now", systemImage: "camera")
                             .font(.caption)
                     }
                     .buttonStyle(.bordered)
                     .disabled(isCapturing)
-                    .help("Commit uncommitted changes and record this checkpoint")
+                    .help("Manually commit and capture this checkpoint now")
                 } else {
                     Button {
                         turnToFork = turn
@@ -155,19 +163,20 @@ private struct CommitTag: View {
 }
 
 private struct EmptyTurnsView: View {
-    let onNewTurn: () -> Void
-
     var body: some View {
         VStack(spacing: 8) {
-            Image(systemName: "arrow.right.circle")
+            Image(systemName: "clock.arrow.2.circlepath")
                 .font(.system(size: 28))
                 .foregroundColor(SpurColors.textMuted)
-            Text("No turns yet")
+            Text("Waiting for changes…")
                 .font(.subheadline)
                 .foregroundColor(SpurColors.textSecondary)
-            Button("New Turn", action: onNewTurn)
-                .buttonStyle(GreenButtonStyle())
+            Text("Checkpoints are captured automatically")
+                .font(.caption)
+                .foregroundColor(SpurColors.textMuted)
+                .multilineTextAlignment(.center)
         }
+        .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

@@ -6,18 +6,21 @@ struct Turn: Codable, Identifiable {
     var label: String
     /// HEAD commit hash when the Turn was started.
     var startCommit: String
-    /// HEAD commit hash after "Capture Checkpoint"; nil until captured.
+    /// HEAD commit hash after a checkpoint is captured; nil until captured.
     var endCommit: String?
     /// All commit hashes between startCommit (exclusive) and endCommit (inclusive).
     var commitRange: [String]
     var createdAt: Date
+    /// True when this turn was created automatically by the checkpoint timer.
+    var isAutomatic: Bool
 
     init(
         id: UUID = UUID(),
         number: Int,
         label: String,
         startCommit: String,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        isAutomatic: Bool = false
     ) {
         self.id = id
         self.number = number
@@ -26,5 +29,19 @@ struct Turn: Codable, Identifiable {
         self.endCommit = nil
         self.commitRange = []
         self.createdAt = createdAt
+        self.isAutomatic = isAutomatic
+    }
+
+    // Custom decoder so existing persisted turns (without isAutomatic) default to false.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id          = try c.decode(UUID.self,     forKey: .id)
+        number      = try c.decode(Int.self,      forKey: .number)
+        label       = try c.decode(String.self,   forKey: .label)
+        startCommit = try c.decode(String.self,   forKey: .startCommit)
+        endCommit   = try c.decodeIfPresent(String.self,   forKey: .endCommit)
+        commitRange = try c.decode([String].self, forKey: .commitRange)
+        createdAt   = try c.decode(Date.self,     forKey: .createdAt)
+        isAutomatic = (try? c.decode(Bool.self,   forKey: .isAutomatic)) ?? false
     }
 }

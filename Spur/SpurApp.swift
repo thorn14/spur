@@ -13,6 +13,7 @@ struct SpurApp: App {
                 .task {
                     await env.repoViewModel.loadLastRepo()
                     await env.optionViewModel.reconcileWorktrees()
+                    await env.optionViewModel.resumeAutoCheckpoints()
                 }
                 .onReceive(
                     NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)
