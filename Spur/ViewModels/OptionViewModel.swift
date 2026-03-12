@@ -26,7 +26,6 @@ final class OptionViewModel: ObservableObject {
 
     var selectedOption: SpurOption? {
         guard let id = selectedOptionId else { return nil }
-        // Search allOptions so selection works across prototypes in the new sidebar.
         return allOptions.first { $0.id == id }
     }
 
@@ -58,8 +57,6 @@ final class OptionViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     /// Active streaming tasks, one per running option.
     private var streamingTasks: [UUID: Task<Void, Never>] = [:]
-    /// Background auto-checkpoint timer tasks, one per monitored option.
-    private var checkpointTasks: [UUID: Task<Void, Never>] = [:]
 
     init(
         repoViewModel: RepoViewModel,
@@ -75,7 +72,6 @@ final class OptionViewModel: ObservableObject {
         self.prService = prService
         self.terminalService = terminalService
         self.reconciliationService = reconciliationService ?? ReconciliationService(git: git)
-        // Forward AppState mutations so views re-render when options list changes.
         repoViewModel.$appState
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
@@ -83,7 +79,6 @@ final class OptionViewModel: ObservableObject {
 
     // MARK: - Prototype switching
 
-    /// Called by the workspace when the selected prototype changes.
     func setPrototype(_ prototype: Prototype?) {
         currentPrototypeId = prototype?.id
         objectWillChange.send()
@@ -94,8 +89,7 @@ final class OptionViewModel: ObservableObject {
 
     // MARK: - Option creation
 
-    /// Creates a branch+worktree for the new option, pushes it (Rule A), and persists.
-    /// Automatically starts the first turn and the auto-checkpoint timer.
+    /// Creates a branch+worktree, pushes it, installs dependencies, and auto-starts the first turn.
     func createOption(name: String, prototype: Prototype, source: BranchSource) async {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, let repoPath = repoViewModel.currentRepo?.path else { return }
@@ -133,16 +127,12 @@ final class OptionViewModel: ObservableObject {
             logger.error("Push failed for '\(branchName)': \(error.localizedDescription)")
         }
 
-        // Auto-install dependencies in the new worktree so the dev server works
-        // without requiring a manual `pnpm install`. Uses the offline store cache
-        // so subsequent installs are fast (no network required).
         await installDependencies(in: worktreePath, repoPath: repoPath)
 
         var option = SpurOption(
             prototypeId: prototype.id, name: trimmed, slug: optionSlug,
             branchName: branchName, worktreePath: worktreePath, port: port
         )
-        // Inherit repo-level dev command if configured.
         let repoDevCmd = repoViewModel.appState?.devCommand ?? ""
         if !repoDevCmd.isEmpty { option.devCommand = repoDevCmd }
         repoViewModel.appState?.options.append(option)
@@ -153,16 +143,12 @@ final class OptionViewModel: ObservableObject {
         selectedOptionId = option.id
         logger.info("Created option '\(trimmed)' branch='\(branchName)' port=\(port)")
 
-        // Auto-start the first turn and begin background checkpoint monitoring.
+        // Auto-start the first turn so recording begins immediately.
         await startTurnInternal(for: option, isAutomatic: true)
-        startAutoCheckpoints(for: option)
     }
 
     // MARK: - Dependency installation
 
-    /// Runs the repo's configured install command in `worktreePath`.
-    /// Falls back to lockfile-detection if no command is saved yet.
-    /// Failures are logged but do not block option creation.
     private func installDependencies(in worktreePath: String, repoPath: String) async {
         let saved = repoViewModel.appState?.installCommand ?? ""
         let cmd = saved.isEmpty
@@ -179,8 +165,6 @@ final class OptionViewModel: ObservableObject {
                 environment: ["TERM": "xterm-256color"],
                 workingDirectory: worktreeURL
             )
-            // Drain output so the process can make progress, but we don't surface
-            // individual lines — just wait for exit and check the status.
             for await _ in pty.outputStream() {}
             let exitCode = pty.terminationStatus
             if exitCode == 0 {
@@ -195,7 +179,6 @@ final class OptionViewModel: ObservableObject {
 
     // MARK: - Dev server control
 
-    /// Starts the dev server for the currently selected option.
     func startServer() {
         guard let option = selectedOption else { return }
         guard !devServer.isRunning(optionId: option.id) else { return }
@@ -204,8 +187,6 @@ final class OptionViewModel: ObservableObject {
         updateOptionStatus(option.id, status: .running)
         serverLogs[option.id] = []
 
-        // Use the option-specific command unless it is still the generic default
-        // and the repo has a configured command saved via RepoSetupSheet.
         let repoDevCmd = repoViewModel.appState?.devCommand ?? ""
         let command: String
         if option.devCommand == Constants.defaultDevCommand && !repoDevCmd.isEmpty {
@@ -213,7 +194,7 @@ final class OptionViewModel: ObservableObject {
         } else {
             command = option.devCommand
         }
-        let stream  = devServer.start(
+        let stream = devServer.start(
             optionId: option.id,
             worktreePath: option.worktreePath,
             port: option.port,
@@ -225,15 +206,12 @@ final class OptionViewModel: ObservableObject {
             for await line in stream {
                 guard let self else { break }
                 self.serverLogs[id, default: []].append(line)
-                // Detect the actual bound URL from server output.
-                // Matches patterns like: http://localhost:5173  or  http://127.0.0.1:3000
                 if self.detectedServerURLs[id] == nil,
                    let url = Self.extractLocalURL(from: line) {
                     self.detectedServerURLs[id] = url
                     logger.info("Detected server URL for option \(id): \(url)")
                 }
             }
-            // Stream finished — server stopped
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.streamingTasks.removeValue(forKey: id)
@@ -244,11 +222,6 @@ final class OptionViewModel: ObservableObject {
         }
     }
 
-    /// Stops the dev server for the currently selected option.
-    ///
-    /// Fire-and-forget: returns immediately; shutdown runs in an unstructured Task
-    /// so the @MainActor is never suspended waiting for the (potentially 5-second)
-    /// SIGTERM → SIGKILL drain sequence.
     func stopServer() {
         guard let option = selectedOption else { return }
         Task {
@@ -265,13 +238,10 @@ final class OptionViewModel: ObservableObject {
         devServer.isRunning(optionId: id)
     }
 
-    /// Stops all running servers and auto-checkpoint timers (called on app termination).
     func stopAllServers() {
         devServer.stopAll()
-        stopAllAutoCheckpoints()
     }
 
-    /// Updates the dev command for the given option and persists.
     func updateDevCommand(_ command: String, for optionId: UUID) {
         guard let idx = repoViewModel.appState?.options.firstIndex(where: { $0.id == optionId }) else { return }
         repoViewModel.appState?.options[idx].devCommand = command
@@ -279,31 +249,22 @@ final class OptionViewModel: ObservableObject {
         objectWillChange.send()
     }
 
-    /// Stops the server (if running), removes the worktree, and deletes the option from state.
     func removeOption(_ optionId: UUID) {
         Task {
-            stopAutoCheckpoints(for: optionId)
-
             if devServer.isRunning(optionId: optionId) {
                 try? await devServer.stop(optionId: optionId)
             }
-
-            // Remove git worktree
             if let option = repoViewModel.appState?.options.first(where: { $0.id == optionId }),
                let repoPath = repoViewModel.currentRepo?.path {
                 try? await git.removeWorktree(repoPath: repoPath, worktreePath: option.worktreePath)
             }
-
             guard let idx = repoViewModel.appState?.options.firstIndex(where: { $0.id == optionId }) else { return }
             repoViewModel.appState?.options.remove(at: idx)
-
-            // Remove from all prototype optionIds lists
             if let expIdx = repoViewModel.appState?.prototypes.firstIndex(where: {
                 $0.optionIds.contains(optionId)
             }) {
                 repoViewModel.appState?.prototypes[expIdx].optionIds.removeAll { $0 == optionId }
             }
-
             if selectedOptionId == optionId { selectedOptionId = options.first?.id }
             repoViewModel.persistState()
             objectWillChange.send()
@@ -313,8 +274,6 @@ final class OptionViewModel: ObservableObject {
 
     // MARK: - Reconciliation
 
-    /// Compares persisted options against `git worktree list` and marks missing ones `.detached`.
-    /// Called once on app launch after the repo state is loaded.
     func reconcileWorktrees() async {
         guard var state = repoViewModel.appState else { return }
         let changed = await reconciliationService.reconcile(appState: &state)
@@ -326,19 +285,25 @@ final class OptionViewModel: ObservableObject {
         }
     }
 
-    /// Starts auto-checkpoint timers for all non-detached options.
-    /// Call this after `reconcileWorktrees()` so timers don't start for detached options.
-    func resumeAutoCheckpoints() {
+    /// Ensures each non-detached option has an open (uncaptured) turn so recording is
+    /// always active. Call after `reconcileWorktrees()` on app launch.
+    func resumeTurns() async {
         guard let options = repoViewModel.appState?.options else { return }
+        var resumed = 0
         for option in options where option.status != .detached {
-            startAutoCheckpoints(for: option)
+            let hasOpenTurn = option.turns.last.map { $0.endCommit == nil } ?? false
+            if !hasOpenTurn {
+                await startTurnInternal(for: option, isAutomatic: true)
+                resumed += 1
+            }
         }
-        logger.info("Resumed auto-checkpoint monitoring for \(options.filter { $0.status != .detached }.count) option(s)")
+        if resumed > 0 {
+            logger.info("Resumed turns for \(resumed) option(s)")
+        }
     }
 
     // MARK: - PR creation
 
-    /// Creates a PR for `option` and persists the result URL.
     @discardableResult
     func createPR(for option: SpurOption, title: String, body: String) async throws -> String {
         guard let repoPath = repoViewModel.currentRepo?.path else {
@@ -350,7 +315,6 @@ final class OptionViewModel: ObservableObject {
             title: title,
             body: body
         )
-        // Persist URL on option
         if let idx = repoViewModel.appState?.options.firstIndex(where: { $0.id == option.id }) {
             repoViewModel.appState?.options[idx].prURL = url
         }
@@ -362,7 +326,6 @@ final class OptionViewModel: ObservableObject {
 
     // MARK: - Terminal
 
-    /// Opens Terminal.app at the selected option's worktree path.
     func openInTerminal() {
         guard let option = selectedOption else { return }
         do {
@@ -375,19 +338,19 @@ final class OptionViewModel: ObservableObject {
 
     // MARK: - Turn management
 
-    /// Returns turns for the given option, ordered by creation date.
     func turns(for optionId: UUID) -> [Turn] {
         repoViewModel.appState?.options
             .first { $0.id == optionId }?.turns ?? []
     }
 
-    /// Returns true if the given option has an active (uncaptured) turn.
-    func hasOpenTurn(for optionId: UUID) -> Bool {
-        repoViewModel.appState?.options
-            .first { $0.id == optionId }?.turns.last?.endCommit == nil ?? false
+    /// The most recently captured (closed) turn for the given option, if any.
+    func latestCapturedTurn(for optionId: UUID) -> Turn? {
+        turns(for: optionId).last { $0.endCommit != nil }
     }
 
-    /// Manually starts a new Turn for the selected option by recording the current HEAD commit.
+    // MARK: - Manual turn / checkpoint
+
+    /// Manually starts a new turn for the selected option.
     func startTurn() async {
         guard let option = selectedOption else { return }
         isLoading = true
@@ -396,7 +359,7 @@ final class OptionViewModel: ObservableObject {
         await startTurnInternal(for: option, isAutomatic: false)
     }
 
-    /// Manually captures a checkpoint for the given turn.
+    /// Manually captures a checkpoint for the given turn (selected option).
     func captureCheckpoint(turn: Turn) async {
         guard let option = selectedOption else { return }
         isLoading = true
@@ -404,6 +367,36 @@ final class OptionViewModel: ObservableObject {
         defer { isLoading = false }
         await performCheckpoint(turn: turn, option: option, isAutomatic: false)
     }
+
+    // MARK: - Auto-checkpoint (triggered by Enter in terminal)
+
+    /// Called when the user presses Enter in the terminal. Captures a checkpoint of any
+    /// uncommitted changes made since the last checkpoint, then opens the next turn.
+    func snapshotBeforeCommand(for optionId: UUID) {
+        Task {
+            guard let option = allOptions.first(where: { $0.id == optionId }),
+                  option.status != .detached else { return }
+
+            // If no open turn exists, start one — the current command will be recorded
+            // in the next Enter-press checkpoint.
+            guard let openTurn = option.turns.last, openTurn.endCommit == nil else {
+                await startTurnInternal(for: option, isAutomatic: true)
+                return
+            }
+
+            // Only capture if there are actual changes to snapshot.
+            do {
+                guard try await git.hasUncommittedChanges(worktreePath: option.worktreePath) else { return }
+            } catch {
+                logger.debug("snapshotBeforeCommand: hasUncommittedChanges failed for \(optionId): \(error)")
+                return
+            }
+
+            await performCheckpoint(turn: openTurn, option: option, isAutomatic: true)
+        }
+    }
+
+    // MARK: - Fork (New Exploration)
 
     /// Creates a new Option branched from `turn.endCommit` in the given prototype.
     func forkFromCheckpoint(turn: Turn, name: String, prototype: Prototype) async {
@@ -414,37 +407,56 @@ final class OptionViewModel: ObservableObject {
         await createOption(name: name, prototype: prototype, source: .commit(endCommit))
     }
 
-    // MARK: - Auto-checkpoint
+    // MARK: - Rollback
 
-    /// Starts a background timer that periodically snapshots uncommitted changes for `option`.
-    func startAutoCheckpoints(for option: SpurOption) {
-        let id = option.id
-        stopAutoCheckpoints(for: id)
-        checkpointTasks[id] = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(Constants.autoCheckpointInterval))
-                guard !Task.isCancelled else { break }
-                guard let self else { break }
-                await self.autoCheckpointIfNeeded(optionId: id)
+    /// Hard-resets the worktree to `turn.endCommit`, discarding all later commits and
+    /// uncommitted changes. Closes any open turn and starts a fresh one at the reset HEAD.
+    func rollbackToCheckpoint(turn: Turn) async {
+        guard let option = selectedOption,
+              let endCommit = turn.endCommit else { return }
+        isLoading = true
+        error = nil
+        defer { isLoading = false }
+
+        do {
+            // 1. Hard reset to the checkpoint commit
+            try await git.resetWorktree(worktreePath: option.worktreePath, toCommit: endCommit)
+
+            // 2. Close any open turn (mark it as rolled back)
+            if let openTurn = option.turns.last, openTurn.endCommit == nil {
+                let head = try await git.getCurrentHead(worktreePath: option.worktreePath)
+                updateTurn(openTurn.id, in: option.id) { t in
+                    t.endCommit = head
+                    t.commitRange = []
+                }
             }
-        }
-        logger.debug("Auto-checkpoint monitoring started for option \(id)")
-    }
 
-    /// Cancels the auto-checkpoint timer for the given option.
-    func stopAutoCheckpoints(for optionId: UUID) {
-        checkpointTasks[optionId]?.cancel()
-        checkpointTasks.removeValue(forKey: optionId)
-        logger.debug("Auto-checkpoint monitoring stopped for option \(optionId)")
+            // 3. Start a fresh turn from the reset HEAD
+            if let updatedOption = allOptions.first(where: { $0.id == option.id }) {
+                await startTurnInternal(for: updatedOption, isAutomatic: true)
+            }
+
+            // 4. Push the reset state
+            if let repoPath = repoViewModel.currentRepo?.path {
+                do {
+                    try await git.push(repoPath: repoPath, branch: option.branchName)
+                } catch {
+                    logger.error("Push after rollback failed: \(error.localizedDescription)")
+                }
+            }
+
+            logger.info("Rolled back option \(option.id) to \(endCommit)")
+        } catch {
+            self.error = error
+            logger.error("rollbackToCheckpoint failed: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Private helpers
 
-    /// Core checkpoint logic shared by manual and auto capture paths.
-    /// Commits dirty changes, records the commit range on `turn`, pushes, then auto-opens the next turn.
+    /// Core checkpoint logic: commit dirty changes, record commit range, push, open next turn.
     private func performCheckpoint(turn: Turn, option: SpurOption, isAutomatic: Bool) async {
         do {
-            // 1. Auto-commit dirty changes
             if try await git.hasUncommittedChanges(worktreePath: option.worktreePath) {
                 let message = isAutomatic
                     ? "[spur] Auto-checkpoint"
@@ -452,26 +464,23 @@ final class OptionViewModel: ObservableObject {
                 _ = try await git.commitAll(worktreePath: option.worktreePath, message: message)
             }
 
-            // 2. Collect commits since turn start
             let commits = try await git.getCommitsSince(
                 hash: turn.startCommit,
                 worktreePath: option.worktreePath
             )
             let endCommit = try await git.getCurrentHead(worktreePath: option.worktreePath)
 
-            // 3. Skip capturing if nothing changed (startCommit == HEAD and no commits)
+            // Skip if nothing actually changed since turn start
             guard endCommit != turn.startCommit || !commits.isEmpty else {
-                logger.debug("Auto-checkpoint: no changes since turn \(turn.number) start, skipping")
+                logger.debug("performCheckpoint: no changes since turn \(turn.number) start, skipping")
                 return
             }
 
-            // 4. Update turn
             updateTurn(turn.id, in: option.id) { t in
                 t.endCommit = endCommit
                 t.commitRange = commits
             }
 
-            // 5. Push branch (Rule A)
             if let repoPath = repoViewModel.currentRepo?.path {
                 do {
                     try await git.push(repoPath: repoPath, branch: option.branchName)
@@ -482,7 +491,7 @@ final class OptionViewModel: ObservableObject {
 
             logger.info("Captured \(isAutomatic ? "auto-" : "")checkpoint for turn \(turn.number): \(endCommit)")
 
-            // 6. Auto-open the next turn so recording is continuous.
+            // Auto-open the next turn so recording is continuous.
             if let updatedOption = allOptions.first(where: { $0.id == option.id }) {
                 await startTurnInternal(for: updatedOption, isAutomatic: true)
             }
@@ -492,7 +501,6 @@ final class OptionViewModel: ObservableObject {
         }
     }
 
-    /// Internal helper: records the current HEAD as the start of a new turn.
     private func startTurnInternal(for option: SpurOption, isAutomatic: Bool) async {
         do {
             let head = try await git.getCurrentHead(worktreePath: option.worktreePath)
@@ -503,32 +511,6 @@ final class OptionViewModel: ObservableObject {
         } catch {
             if !isAutomatic { self.error = error }
             logger.error("startTurnInternal failed for option \(option.id): \(error.localizedDescription)")
-        }
-    }
-
-    /// Fires on each timer tick: ensures an open turn exists, then captures if there are changes.
-    private func autoCheckpointIfNeeded(optionId: UUID) async {
-        guard let option = allOptions.first(where: { $0.id == optionId }),
-              option.status != .detached else { return }
-
-        if let lastTurn = option.turns.last, lastTurn.endCommit == nil {
-            // Open turn exists — check for changes
-            do {
-                guard try await git.hasUncommittedChanges(worktreePath: option.worktreePath) else { return }
-            } catch {
-                logger.debug("Auto-checkpoint: hasUncommittedChanges failed for \(optionId): \(error)")
-                return
-            }
-            await performCheckpoint(turn: lastTurn, option: option, isAutomatic: true)
-        } else {
-            // No open turn — start one so the next tick can capture
-            await startTurnInternal(for: option, isAutomatic: true)
-        }
-    }
-
-    private func stopAllAutoCheckpoints() {
-        for id in Array(checkpointTasks.keys) {
-            stopAutoCheckpoints(for: id)
         }
     }
 
@@ -555,10 +537,7 @@ final class OptionViewModel: ObservableObject {
         objectWillChange.send()
     }
 
-    /// Scans a log line for a local server URL and returns it if found.
-    /// Matches Vite, Next.js, webpack-dev-server, and most other dev servers.
     static func extractLocalURL(from line: String) -> URL? {
-        // Match http://localhost:PORT or http://127.0.0.1:PORT
         let pattern = #"https?://(localhost|127\.0\.0\.1):\d+"#
         guard let range = line.range(of: pattern, options: .regularExpression) else { return nil }
         return URL(string: String(line[range]))

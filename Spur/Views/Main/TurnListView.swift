@@ -1,34 +1,58 @@
 import SwiftUI
 
-/// Displays the turns for the currently selected option.
-/// Shows start/end commits and allows forking from a captured checkpoint.
-/// Checkpoints are captured automatically; manual "Capture" is available as an override.
+/// Displays the checkpoints for the currently selected option.
+/// Checkpoints are captured automatically when Enter is pressed in the terminal.
+/// Manual capture, new-turn, roll-back, and "New Exploration" (fork) are also available.
 struct TurnListView: View {
     @EnvironmentObject var optionViewModel: OptionViewModel
     @EnvironmentObject var prototypeViewModel: PrototypeViewModel
 
-    /// Bound to the turn being forked (drives ForkFromCheckpointSheet).
     @State private var turnToFork: Turn?
+    @State private var turnToRollback: Turn?
 
     private var option: SpurOption? { optionViewModel.selectedOption }
     private var turns: [Turn] {
         guard let id = option?.id else { return [] }
         return optionViewModel.turns(for: id)
     }
+    /// Latest captured turn available for forking.
+    private var latestCaptured: Turn? {
+        guard let id = option?.id else { return nil }
+        return optionViewModel.latestCapturedTurn(for: id)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             // ── Header ──────────────────────────────────────────────────
-            HStack {
+            HStack(spacing: 6) {
                 Text("Checkpoints")
                     .font(.headline)
                     .foregroundColor(SpurColors.textPrimary)
                 Spacer()
-                // Auto-checkpoint indicator
-                Label("Auto", systemImage: "clock.arrow.2.circlepath")
-                    .font(.caption2)
-                    .foregroundColor(SpurColors.accent)
-                    .help("Checkpoints are captured automatically every \(Int(Constants.autoCheckpointInterval))s")
+                // Manual new-turn (secondary icon button)
+                Button {
+                    Task { await optionViewModel.startTurn() }
+                } label: {
+                    Image(systemName: "plus.circle")
+                        .font(.system(size: 13))
+                        .foregroundColor(SpurColors.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(option == nil || optionViewModel.isLoading)
+                .help("Manually start a new turn")
+
+                // Primary CTA — "New Exploration"
+                Button {
+                    if let turn = latestCaptured {
+                        turnToFork = turn
+                    }
+                } label: {
+                    Label("New Exploration", systemImage: "tuningfork")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                .buttonStyle(GreenButtonStyle())
+                .disabled(latestCaptured == nil || optionViewModel.isLoading)
+                .help("Fork a new option from the latest checkpoint")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -38,11 +62,11 @@ struct TurnListView: View {
 
             // ── Turn list ────────────────────────────────────────────────
             if turns.isEmpty {
-                EmptyTurnsView()
+                EmptyCheckpointsView()
             } else {
                 List {
                     ForEach(turns) { turn in
-                        TurnRow(turn: turn, turnToFork: $turnToFork)
+                        TurnRow(turn: turn, turnToFork: $turnToFork, turnToRollback: $turnToRollback)
                     }
                 }
                 .listStyle(.inset)
@@ -58,9 +82,27 @@ struct TurnListView: View {
                     .background(Color.red.opacity(0.07))
             }
         }
+        // Fork sheet
         .sheet(item: $turnToFork) { turn in
             if let prototype = prototypeViewModel.selectedPrototype {
                 ForkFromCheckpointSheet(turn: turn, prototype: prototype)
+            }
+        }
+        // Roll-back confirmation
+        .alert("Roll Back to Checkpoint?", isPresented: .init(
+            get: { turnToRollback != nil },
+            set: { if !$0 { turnToRollback = nil } }
+        )) {
+            Button("Roll Back", role: .destructive) {
+                guard let turn = turnToRollback else { return }
+                turnToRollback = nil
+                Task { await optionViewModel.rollbackToCheckpoint(turn: turn) }
+            }
+            Button("Cancel", role: .cancel) { turnToRollback = nil }
+        } message: {
+            if let turn = turnToRollback {
+                Text("This will hard-reset the worktree to commit \(String(turn.endCommit?.prefix(7) ?? ""))."
+                   + " All later commits and uncommitted changes will be lost.")
             }
         }
     }
@@ -71,9 +113,9 @@ struct TurnListView: View {
 private struct TurnRow: View {
     let turn: Turn
     @Binding var turnToFork: Turn?
+    @Binding var turnToRollback: Turn?
     @EnvironmentObject var optionViewModel: OptionViewModel
 
-    private var isCapturing: Bool { optionViewModel.isLoading }
     private var shortStart: String { String(turn.startCommit.prefix(7)) }
     private var shortEnd: String? { turn.endCommit.map { String($0.prefix(7)) } }
 
@@ -112,15 +154,15 @@ private struct TurnRow: View {
                 } else {
                     Text("recording…")
                         .font(.caption2)
-                        .foregroundColor(SpurColors.textMuted)
+                        .foregroundColor(SpurColors.accent)
                         .italic()
                 }
             }
 
             // ── Actions ────────────────────────────────────────────────
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 if turn.endCommit == nil {
-                    // Manual capture override
+                    // Open turn: manual capture override
                     Button {
                         Task { await optionViewModel.captureCheckpoint(turn: turn) }
                     } label: {
@@ -128,17 +170,28 @@ private struct TurnRow: View {
                             .font(.caption)
                     }
                     .buttonStyle(.bordered)
-                    .disabled(isCapturing)
-                    .help("Manually commit and capture this checkpoint now")
+                    .disabled(optionViewModel.isLoading)
+                    .help("Manually capture this checkpoint now")
                 } else {
+                    // Captured turn: explore or roll back
                     Button {
                         turnToFork = turn
                     } label: {
-                        Label("Fork", systemImage: "tuningfork")
+                        Label("Explore", systemImage: "tuningfork")
                             .font(.caption)
                     }
                     .buttonStyle(.bordered)
-                    .help("Create a new option branched from this checkpoint")
+                    .help("Fork a new option branched from this checkpoint")
+
+                    Button {
+                        turnToRollback = turn
+                    } label: {
+                        Label("Roll Back", systemImage: "arrow.uturn.backward")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(Color(hex: "F87171"))
+                    .help("Reset the worktree to this checkpoint (destructive)")
                 }
             }
         }
@@ -162,16 +215,16 @@ private struct CommitTag: View {
     }
 }
 
-private struct EmptyTurnsView: View {
+private struct EmptyCheckpointsView: View {
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 10) {
             Image(systemName: "clock.arrow.2.circlepath")
                 .font(.system(size: 28))
                 .foregroundColor(SpurColors.textMuted)
-            Text("Waiting for changes…")
+            Text("No checkpoints yet")
                 .font(.subheadline)
                 .foregroundColor(SpurColors.textSecondary)
-            Text("Checkpoints are captured automatically")
+            Text("Checkpoints are captured automatically\nwhen you press Enter in the terminal.")
                 .font(.caption)
                 .foregroundColor(SpurColors.textMuted)
                 .multilineTextAlignment(.center)

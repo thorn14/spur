@@ -64,7 +64,10 @@ struct RightPanelView: View {
                 switch selectedTab {
                 case .terminal:
                     if let option {
-                        SpurTerminalView(worktreePath: option.worktreePath)
+                        SpurTerminalView(
+                            worktreePath: option.worktreePath,
+                            onEnterPressed: { optionViewModel.snapshotBeforeCommand(for: option.id) }
+                        )
                     } else {
                         noSelectionView("Select a worktree to open a terminal")
                     }
