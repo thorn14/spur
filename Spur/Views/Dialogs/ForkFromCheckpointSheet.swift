@@ -3,7 +3,7 @@ import SwiftUI
 /// Sheet for creating a new Option branched from a captured checkpoint (turn.endCommit).
 struct ForkFromCheckpointSheet: View {
     let turn: Turn
-    let experiment: Experiment
+    let prototype: Prototype
 
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject var optionViewModel: OptionViewModel
@@ -57,7 +57,7 @@ struct ForkFromCheckpointSheet: View {
                     .textFieldStyle(.roundedBorder)
                     .focused($nameFocused)
                     .onSubmit { if canSubmit { fork() } }
-                Text("Branch: \(experiment.slug)/\(SlugGenerator.generate(from: name.isEmpty ? "…" : name))")
+                Text("Branch: \(prototype.slug)/\(SlugGenerator.generate(from: name.isEmpty ? "…" : name))")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundColor(.secondary)
             }
@@ -91,7 +91,7 @@ struct ForkFromCheckpointSheet: View {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, turn.endCommit != nil else { return }
         Task {
-            await optionViewModel.forkFromCheckpoint(turn: turn, name: trimmed, experiment: experiment)
+            await optionViewModel.forkFromCheckpoint(turn: turn, name: trimmed, prototype: prototype)
             if optionViewModel.error == nil { dismiss() }
         }
     }

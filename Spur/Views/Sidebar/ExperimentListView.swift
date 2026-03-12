@@ -1,36 +1,40 @@
 import SwiftUI
 
-struct ExperimentListView: View {
-    @EnvironmentObject var experimentViewModel: ExperimentViewModel
+struct PrototypeListView: View {
+    @EnvironmentObject var prototypeViewModel: PrototypeViewModel
+    @State private var showingNewPrototype = false
 
     var body: some View {
         List(
-            experimentViewModel.experiments,
+            prototypeViewModel.prototypes,
             id: \.id,
-            selection: $experimentViewModel.selectedExperimentId
-        ) { experiment in
-            ExperimentRow(experiment: experiment)
-                .tag(experiment.id)
+            selection: $prototypeViewModel.selectedPrototypeId
+        ) { prototype in
+            PrototypeRow(prototype: prototype)
+                .tag(prototype.id)
         }
         .listStyle(.sidebar)
         .overlay {
-            if experimentViewModel.experiments.isEmpty {
-                EmptyExperimentsView()
+            if prototypeViewModel.prototypes.isEmpty {
+                EmptyPrototypesView { showingNewPrototype = true }
             }
+        }
+        .sheet(isPresented: $showingNewPrototype) {
+            NewPrototypeSheet()
         }
     }
 }
 
 // MARK: - Row
 
-private struct ExperimentRow: View {
-    let experiment: Experiment
+private struct PrototypeRow: View {
+    let prototype: Prototype
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Label(experiment.name, systemImage: "flask")
+            Label(prototype.name, systemImage: "hammer")
                 .lineLimit(1)
-            Text("\(experiment.optionIds.count) option\(experiment.optionIds.count == 1 ? "" : "s")")
+            Text("\(prototype.optionIds.count) option\(prototype.optionIds.count == 1 ? "" : "s")")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -40,20 +44,20 @@ private struct ExperimentRow: View {
 
 // MARK: - Empty state (macOS 13 compatible)
 
-private struct EmptyExperimentsView: View {
+private struct EmptyPrototypesView: View {
+    let onNew: () -> Void
+
     var body: some View {
         VStack(spacing: 10) {
-            Image(systemName: "flask")
+            Image(systemName: "hammer")
                 .font(.system(size: 32))
                 .foregroundColor(.secondary)
-            Text("No experiments yet")
+            Text("No prototypes yet")
                 .font(.callout)
                 .foregroundColor(.secondary)
-            Text("Click + below to create one.")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            Button("New Prototype", action: onNew)
+                .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .allowsHitTesting(false)
     }
 }

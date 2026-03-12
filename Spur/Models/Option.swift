@@ -5,7 +5,7 @@ import Foundation
 // Using the full name "SpurOption" avoids confusion with Swift's Optional.
 struct SpurOption: Codable, Identifiable {
     let id: UUID
-    var experimentId: UUID
+    var prototypeId: UUID
     var name: String
     var slug: String
     /// Full branch name, e.g. "exp/color-study/warm-palette"
@@ -14,6 +14,8 @@ struct SpurOption: Codable, Identifiable {
     var worktreePath: String
     var port: Int
     var status: OptionStatus
+    /// Shell command used to start the dev server for this option.
+    var devCommand: String
     /// Commit hash this Option was forked from; nil if branched from main.
     var forkedFromCommit: String?
     var prURL: String?
@@ -22,7 +24,7 @@ struct SpurOption: Codable, Identifiable {
 
     init(
         id: UUID = UUID(),
-        experimentId: UUID,
+        prototypeId: UUID,
         name: String,
         slug: String,
         branchName: String,
@@ -30,13 +32,14 @@ struct SpurOption: Codable, Identifiable {
         port: Int
     ) {
         self.id = id
-        self.experimentId = experimentId
+        self.prototypeId = prototypeId
         self.name = name
         self.slug = slug
         self.branchName = branchName
         self.worktreePath = worktreePath
         self.port = port
         self.status = .idle
+        self.devCommand = Constants.defaultDevCommand
         self.forkedFromCommit = nil
         self.prURL = nil
         self.prNumber = nil

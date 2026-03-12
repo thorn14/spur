@@ -9,17 +9,22 @@ struct AppState: Codable {
     var repoId: UUID
     var repoPath: String
     var baseBranch: String
+    var installCommand: String
     var devCommand: String
-    var experiments: [Experiment]
+    var prototypes: [Prototype]
     var options: [SpurOption]
+
+    /// True when the repo has not yet been configured with install/dev commands.
+    var needsSetup: Bool { installCommand.isEmpty || devCommand.isEmpty }
 
     init(repo: Repo) {
         self.schemaVersion = AppState.currentSchemaVersion
         self.repoId = repo.id
         self.repoPath = repo.path
         self.baseBranch = repo.baseBranch
+        self.installCommand = repo.installCommand
         self.devCommand = repo.devCommand
-        self.experiments = []
+        self.prototypes = []
         self.options = []
     }
 }

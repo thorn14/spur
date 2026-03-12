@@ -8,7 +8,7 @@ struct CreatePRSheet: View {
     @EnvironmentObject var optionViewModel: OptionViewModel
 
     @State private var title: String
-    @State private var body: String = ""
+    @State private var prBody: String = ""
     @State private var isCreating = false
     @State private var createdURL: String?
     @State private var error: Error?
@@ -76,7 +76,7 @@ struct CreatePRSheet: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Description (optional)")
                         .font(.subheadline)
-                    TextEditor(text: $body)
+                    TextEditor(text: $prBody)
                         .font(.system(.body))
                         .frame(minHeight: 80)
                         .overlay(
@@ -136,7 +136,7 @@ struct CreatePRSheet: View {
                 let url = try await optionViewModel.createPR(
                     for: option,
                     title: trimmedTitle,
-                    body: body
+                    body: prBody
                 )
                 createdURL = url
             } catch {

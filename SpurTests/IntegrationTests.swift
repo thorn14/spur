@@ -6,7 +6,7 @@ import XCTest
 /// Each test uses an isolated git + persistence environment created in setUp.
 ///
 /// Workflows tested:
-///   1. Experiment → Option creation (branch + worktree on disk)
+///   1. Prototype → Option creation (branch + worktree on disk)
 ///   2. Turn lifecycle: start → capture checkpoint → fork
 ///   3. Command tokenizer with quotes (CommandRunnerViewModel.tokenize)
 ///   4. PRService.parseGitHubOwnerRepo (HTTPS + SSH remote URL formats)
@@ -328,7 +328,7 @@ final class IntegrationTests: XCTestCase {
         var state = AppState(repo: repo)
         state.options = [
             SpurOption(
-                experimentId: UUID(),
+                prototypeId: UUID(),
                 name: "Gone Option",
                 slug: "gone",
                 branchName: branch,
@@ -350,11 +350,11 @@ final class IntegrationTests: XCTestCase {
 
         let repo = Repo(path: repoURL.path)
         var state = AppState(repo: repo)
-        let experiment = Experiment(name: "My Exp", slug: "my-exp")
-        state.experiments = [experiment]
+        let prototype = Prototype(name: "My Exp", slug: "my-exp")
+        state.prototypes = [prototype]
 
         let option = SpurOption(
-            experimentId: experiment.id,
+            prototypeId: prototype.id,
             name: "Option A",
             slug: "option-a",
             branchName: "exp/my-exp/option-a",
@@ -366,7 +366,7 @@ final class IntegrationTests: XCTestCase {
         try persistence.save(state)
         let loaded = try persistence.load(repoId: repo.id)
 
-        XCTAssertEqual(loaded.experiments.count, 1)
+        XCTAssertEqual(loaded.prototypes.count, 1)
         XCTAssertEqual(loaded.options.count, 1)
         XCTAssertEqual(loaded.options[0].name, "Option A")
         XCTAssertEqual(loaded.options[0].branchName, "exp/my-exp/option-a")

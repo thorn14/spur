@@ -2,8 +2,8 @@ import SwiftUI
 
 struct SidebarView: View {
     @EnvironmentObject var repoViewModel: RepoViewModel
-    @EnvironmentObject var experimentViewModel: ExperimentViewModel
-    @State private var showingNewExperiment = false
+    @EnvironmentObject var prototypeViewModel: PrototypeViewModel
+    @State private var showingNewPrototype = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -13,16 +13,16 @@ struct SidebarView: View {
                 Divider()
             }
 
-            // Experiment list
-            ExperimentListView()
+            // Prototype list
+            PrototypeListView()
 
             Divider()
 
-            // "New Experiment" footer button
+            // "New Prototype" footer button
             Button {
-                showingNewExperiment = true
+                showingNewPrototype = true
             } label: {
-                Label("New Experiment", systemImage: "plus")
+                Label("New Prototype", systemImage: "plus")
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
@@ -30,8 +30,8 @@ struct SidebarView: View {
             .padding(.vertical, 10)
             .contentShape(Rectangle())
         }
-        .sheet(isPresented: $showingNewExperiment) {
-            NewExperimentSheet()
+        .sheet(isPresented: $showingNewPrototype) {
+            NewPrototypeSheet()
         }
         .frame(minWidth: 200)
     }

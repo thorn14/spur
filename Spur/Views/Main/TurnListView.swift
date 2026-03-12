@@ -4,7 +4,7 @@ import SwiftUI
 /// Shows start/end commits, allows capturing checkpoints, and forking from a checkpoint.
 struct TurnListView: View {
     @EnvironmentObject var optionViewModel: OptionViewModel
-    @EnvironmentObject var experimentViewModel: ExperimentViewModel
+    @EnvironmentObject var prototypeViewModel: PrototypeViewModel
 
     /// Bound to the turn being forked (drives ForkFromCheckpointSheet).
     @State private var turnToFork: Turn?
@@ -21,7 +21,7 @@ struct TurnListView: View {
             HStack {
                 Text("Turns")
                     .font(.headline)
-                    .foregroundColor(.primary)
+                    .foregroundColor(SpurColors.textPrimary)
                 Spacer()
                 Button {
                     Task { await optionViewModel.startTurn() }
@@ -30,19 +30,21 @@ struct TurnListView: View {
                         .font(.caption)
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(.accentColor)
+                .foregroundColor(SpurColors.accent)
                 .disabled(option == nil || optionViewModel.isLoading)
                 .help("Start a new turn (records current HEAD)")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(Color(NSColor.windowBackgroundColor))
+            .background(SpurColors.surface)
 
             Divider()
 
             // ── Turn list ────────────────────────────────────────────────
             if turns.isEmpty {
-                EmptyTurnsView()
+                EmptyTurnsView {
+                    Task { await optionViewModel.startTurn() }
+                }
             } else {
                 List {
                     ForEach(turns) { turn in
@@ -63,8 +65,8 @@ struct TurnListView: View {
             }
         }
         .sheet(item: $turnToFork) { turn in
-            if let experiment = experimentViewModel.selectedExperiment {
-                ForkFromCheckpointSheet(turn: turn, experiment: experiment)
+            if let prototype = prototypeViewModel.selectedPrototype {
+                ForkFromCheckpointSheet(turn: turn, prototype: prototype)
             }
         }
     }
@@ -87,10 +89,11 @@ private struct TurnRow: View {
             HStack {
                 Label(turn.label, systemImage: "arrow.right.circle")
                     .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(SpurColors.textPrimary)
                 Spacer()
                 Text(turn.createdAt, style: .date)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(SpurColors.textSecondary)
             }
 
             // ── Commit range ───────────────────────────────────────────
@@ -99,11 +102,11 @@ private struct TurnRow: View {
                 if let end = shortEnd {
                     Image(systemName: "arrow.right")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SpurColors.textSecondary)
                     CommitTag(hash: end, label: "end")
                     Text("(\(turn.commitRange.count) commit\(turn.commitRange.count == 1 ? "" : "s"))")
                         .font(.caption2)
-                        .foregroundColor(.secondary)
+                        .foregroundColor(SpurColors.textSecondary)
                 }
             }
 
@@ -152,19 +155,18 @@ private struct CommitTag: View {
 }
 
 private struct EmptyTurnsView: View {
+    let onNewTurn: () -> Void
+
     var body: some View {
         VStack(spacing: 8) {
             Image(systemName: "arrow.right.circle")
                 .font(.system(size: 28))
-                .foregroundColor(.secondary)
+                .foregroundColor(SpurColors.textMuted)
             Text("No turns yet")
                 .font(.subheadline)
-                .foregroundColor(.secondary)
-            Text("Click \"New Turn\" to record the current state.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 16)
+                .foregroundColor(SpurColors.textSecondary)
+            Button("New Turn", action: onNewTurn)
+                .buttonStyle(GreenButtonStyle())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

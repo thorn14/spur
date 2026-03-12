@@ -81,7 +81,7 @@ final class ReconciliationTests: XCTestCase {
 
     private func makeOption(worktreePath: String, status: OptionStatus = .idle) -> SpurOption {
         SpurOption(
-            experimentId: UUID(),
+            prototypeId: UUID(),
             name: "test",
             slug: "test",
             branchName: "exp/test/test",

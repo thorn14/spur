@@ -79,13 +79,13 @@ final class ProcessRunner {
                 let group = DispatchGroup()
 
                 group.enter()
-                DispatchQueue.global(qos: .utility).async {
+                DispatchQueue.global(qos: .userInitiated).async {
                     stdoutData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
                     group.leave()
                 }
 
                 group.enter()
-                DispatchQueue.global(qos: .utility).async {
+                DispatchQueue.global(qos: .userInitiated).async {
                     stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
                     group.leave()
                 }
@@ -117,13 +117,15 @@ final class ProcessRunner {
     func stream(
         executable: URL,
         arguments: [String] = [],
-        workingDirectory: URL? = nil
+        workingDirectory: URL? = nil,
+        environment: [String: String]? = nil
     ) -> AsyncStream<ProcessOutput> {
         AsyncStream { continuation in
             let process = Process()
             process.executableURL = executable
             process.arguments = arguments
             if let wd = workingDirectory { process.currentDirectoryURL = wd }
+            if let env = environment { process.environment = env }
 
             let stdoutPipe = Pipe()
             let stderrPipe = Pipe()

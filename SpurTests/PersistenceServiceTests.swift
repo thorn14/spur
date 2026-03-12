@@ -21,15 +21,15 @@ final class PersistenceServiceTests: XCTestCase {
     func testSaveAndLoad() throws {
         let repo = Repo(path: "/Users/test/myapp")
         var state = AppState(repo: repo)
-        state.experiments = [Experiment(name: "Color Study", slug: "color-study")]
+        state.prototypes = [Prototype(name: "Color Study", slug: "color-study")]
 
         try service.save(state)
         let loaded = try service.load(repoId: repo.id)
 
         XCTAssertEqual(loaded.repoId, state.repoId)
         XCTAssertEqual(loaded.repoPath, "/Users/test/myapp")
-        XCTAssertEqual(loaded.experiments.count, 1)
-        XCTAssertEqual(loaded.experiments[0].name, "Color Study")
+        XCTAssertEqual(loaded.prototypes.count, 1)
+        XCTAssertEqual(loaded.prototypes[0].name, "Color Study")
     }
 
     func testSaveOverwritesPreviousState() throws {
@@ -37,22 +37,22 @@ final class PersistenceServiceTests: XCTestCase {
         var state = AppState(repo: repo)
         try service.save(state)
 
-        state.experiments.append(Experiment(name: "New Experiment", slug: "new"))
+        state.prototypes.append(Prototype(name: "New Prototype", slug: "new"))
         try service.save(state)
 
         let loaded = try service.load(repoId: repo.id)
-        XCTAssertEqual(loaded.experiments.count, 1)
-        XCTAssertEqual(loaded.experiments[0].name, "New Experiment")
+        XCTAssertEqual(loaded.prototypes.count, 1)
+        XCTAssertEqual(loaded.prototypes[0].name, "New Prototype")
     }
 
     func testSavePreservesOptions() throws {
         let repo = Repo(path: "/test")
         var state = AppState(repo: repo)
-        let exp = Experiment(name: "E", slug: "e")
-        state.experiments = [exp]
+        let exp = Prototype(name: "E", slug: "e")
+        state.prototypes = [exp]
 
         var option = SpurOption(
-            experimentId: exp.id, name: "O", slug: "o",
+            prototypeId: exp.id, name: "O", slug: "o",
             branchName: "exp/e/o", worktreePath: "/wt/e--o", port: 3001
         )
         option.turns = [Turn(number: 1, label: "T1", startCommit: "abc123")]

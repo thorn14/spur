@@ -57,6 +57,7 @@ final class RepoViewModel: ObservableObject {
                 id: state.repoId,
                 path: state.repoPath,
                 baseBranch: state.baseBranch,
+                installCommand: state.installCommand,
                 devCommand: state.devCommand
             )
             logger.info("Loaded last repo: \(state.repoPath)")
@@ -64,6 +65,25 @@ final class RepoViewModel: ObservableObject {
             // Not surfaced to user — first launch or corrupt state is handled by showing picker.
             logger.error("Failed to load last repo: \(error.localizedDescription)")
         }
+    }
+
+    /// Saves the install and dev commands as repo-level defaults.
+    /// Also propagates the dev command to any option still carrying the generic default.
+    func updateSetup(installCommand: String, devCommand: String) {
+        appState?.installCommand = installCommand
+        appState?.devCommand = devCommand
+        currentRepo?.installCommand = installCommand
+        currentRepo?.devCommand = devCommand
+        // Push the new devCommand down to all options that still have the placeholder default.
+        if !devCommand.isEmpty {
+            appState?.options.indices.forEach { idx in
+                if appState?.options[idx].devCommand == Constants.defaultDevCommand {
+                    appState?.options[idx].devCommand = devCommand
+                }
+            }
+        }
+        persistState()
+        logger.info("Repo setup saved — install: '\(installCommand)' dev: '\(devCommand)'")
     }
 
     /// Persists the current in-memory state to disk.

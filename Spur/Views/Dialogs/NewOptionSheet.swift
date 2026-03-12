@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct NewOptionSheet: View {
-    /// The experiment this option will belong to.
-    let experiment: Experiment
+    /// The prototype this option will belong to.
+    let prototype: Prototype
 
     @EnvironmentObject var optionViewModel: OptionViewModel
     @EnvironmentObject var repoViewModel: RepoViewModel
@@ -17,7 +17,7 @@ struct NewOptionSheet: View {
     private var baseBranch: String { repoViewModel.currentRepo?.baseBranch ?? "main" }
     private var previewBranch: String {
         let slug = SlugGenerator.generate(from: trimmed.isEmpty ? "…" : trimmed)
-        return "exp/\(experiment.slug)/\(slug)"
+        return "exp/\(prototype.slug)/\(slug)"
     }
 
     var body: some View {
@@ -26,8 +26,8 @@ struct NewOptionSheet: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity, alignment: .center)
 
-            // Experiment context
-            Label(experiment.name, systemImage: "flask")
+            // Prototype context
+            Label(prototype.name, systemImage: "hammer")
                 .font(.caption)
                 .foregroundColor(.secondary)
 
@@ -109,7 +109,7 @@ struct NewOptionSheet: View {
         guard isValid, fromMain else { return }
         await optionViewModel.createOption(
             name: name,
-            experiment: experiment,
+            prototype: prototype,
             source: .main(baseBranch)
         )
         if optionViewModel.error == nil {

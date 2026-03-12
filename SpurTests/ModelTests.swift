@@ -31,18 +31,18 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(repo.devCommand, "npm run dev")
     }
 
-    // MARK: - Experiment
+    // MARK: - Prototype
 
-    func testExperimentRoundtrip() throws {
+    func testPrototypeRoundtrip() throws {
         let optionId1 = UUID()
         let optionId2 = UUID()
-        let exp = Experiment(
+        let exp = Prototype(
             name: "Color Study",
             slug: "color-study",
             optionIds: [optionId1, optionId2]
         )
         let data = try encoder.encode(exp)
-        let decoded = try decoder.decode(Experiment.self, from: data)
+        let decoded = try decoder.decode(Prototype.self, from: data)
 
         XCTAssertEqual(decoded.id, exp.id)
         XCTAssertEqual(decoded.name, "Color Study")
@@ -50,8 +50,8 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(decoded.optionIds, [optionId1, optionId2])
     }
 
-    func testExperimentDefaultsEmptyOptionIds() {
-        let exp = Experiment(name: "Test", slug: "test")
+    func testPrototypeDefaultsEmptyOptionIds() {
+        let exp = Prototype(name: "Test", slug: "test")
         XCTAssertTrue(exp.optionIds.isEmpty)
     }
 
@@ -59,7 +59,7 @@ final class ModelTests: XCTestCase {
 
     func testOptionRoundtrip() throws {
         var option = SpurOption(
-            experimentId: UUID(),
+            prototypeId: UUID(),
             name: "Warm Palette",
             slug: "warm-palette",
             branchName: "exp/color-study/warm-palette",
@@ -85,7 +85,7 @@ final class ModelTests: XCTestCase {
     func testOptionStatusRoundtrip() throws {
         for status in [OptionStatus.idle, .running, .detached, .error] {
             var option = SpurOption(
-                experimentId: UUID(), name: "X", slug: "x",
+                prototypeId: UUID(), name: "X", slug: "x",
                 branchName: "exp/x/x", worktreePath: "/x", port: 3001
             )
             option.status = status
@@ -124,10 +124,10 @@ final class ModelTests: XCTestCase {
     func testAppStateRoundtrip() throws {
         let repo = Repo(path: "/Users/test/app")
         var state = AppState(repo: repo)
-        state.experiments = [Experiment(name: "E1", slug: "e1")]
+        state.prototypes = [Prototype(name: "E1", slug: "e1")]
 
         var option = SpurOption(
-            experimentId: state.experiments[0].id,
+            prototypeId: state.prototypes[0].id,
             name: "O1", slug: "o1",
             branchName: "exp/e1/o1", worktreePath: "/wt", port: 3002
         )
@@ -140,7 +140,7 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(decoded.repoId, state.repoId)
         XCTAssertEqual(decoded.repoPath, "/Users/test/app")
         XCTAssertEqual(decoded.schemaVersion, AppState.currentSchemaVersion)
-        XCTAssertEqual(decoded.experiments.count, 1)
+        XCTAssertEqual(decoded.prototypes.count, 1)
         XCTAssertEqual(decoded.options.count, 1)
         XCTAssertEqual(decoded.options[0].turns.count, 1)
     }

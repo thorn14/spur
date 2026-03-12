@@ -1,74 +1,51 @@
 import SwiftUI
 
-/// Command input + streaming output panel for running arbitrary commands in an option's worktree.
+/// Legacy command runner view — kept for compatibility. Main UI uses InlineTerminalView.
 struct CommandRunnerView: View {
     let worktreePath: String
 
     @StateObject private var viewModel = CommandRunnerViewModel()
     @State private var commandText = ""
     @FocusState private var inputFocused: Bool
-    @EnvironmentObject var optionViewModel: OptionViewModel
 
     var body: some View {
-        VStack(spacing: 0) {
-            // ── Output area ──────────────────────────────────────────────
-            LogOutputView(lines: viewModel.outputLines)
-                .frame(maxHeight: .infinity)
-
-            Divider()
-
-            // ── Input bar ─────────────────────────────────────────────
-            HStack(spacing: 6) {
-                Text("$")
-                    .font(.system(.body, design: .monospaced))
-                    .foregroundColor(.secondary)
-
-                TextField("Enter command…", text: $commandText)
-                    .font(.system(.body, design: .monospaced))
-                    .textFieldStyle(.plain)
-                    .focused($inputFocused)
-                    .onSubmit { submit() }
-                    .disabled(viewModel.isRunning)
-
-                if viewModel.isRunning {
-                    Button("Stop") { viewModel.cancel() }
-                        .buttonStyle(.bordered)
-                        .tint(.red)
-                        .font(.caption)
-                } else {
-                    Button {
-                        submit()
-                    } label: {
-                        Image(systemName: "return")
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 1) {
+                    ForEach(viewModel.outputLines.indices, id: \.self) { i in
+                        Text(viewModel.outputLines[i])
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.primary)
+                            .textSelection(.enabled)
+                            .id(i)
                     }
-                    .buttonStyle(.plain)
-                    .foregroundColor(.accentColor)
-                    .disabled(commandText.trimmingCharacters(in: .whitespaces).isEmpty)
-                    .help("Run command (Return)")
+                    HStack(spacing: 0) {
+                        Text("$ ").font(.system(size: 12, design: .monospaced)).foregroundColor(.accentColor)
+                        TextField("", text: $commandText)
+                            .font(.system(size: 12, design: .monospaced))
+                            .textFieldStyle(.plain)
+                            .focused($inputFocused)
+                            .onSubmit { submit() }
+                    }
+                    .id("__prompt__")
                 }
-
-                Divider().frame(height: 16)
-
-                Button {
-                    viewModel.clearOutput()
-                } label: {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(.secondary)
-                .help("Clear output")
+                .padding(10)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color(NSColor.controlBackgroundColor))
+            .onChange(of: viewModel.outputLines.count) { _ in proxy.scrollTo("__prompt__", anchor: .bottom) }
         }
-        .onAppear { inputFocused = true }
+        .contentShape(Rectangle())
+        .onTapGesture { inputFocused = true }
+        .onAppear {
+            viewModel.startIfNeeded(worktreePath: worktreePath)
+            inputFocused = true
+        }
     }
 
     private func submit() {
         let cmd = commandText.trimmingCharacters(in: .whitespaces)
-        guard !cmd.isEmpty, !viewModel.isRunning else { return }
+        guard !cmd.isEmpty else { return }
         commandText = ""
-        viewModel.run(command: cmd, worktreePath: worktreePath)
+        viewModel.send(cmd)
+        DispatchQueue.main.async { inputFocused = true }
     }
 }

@@ -13,18 +13,31 @@ final class OptionViewModel: ObservableObject {
     @Published var error: Error?
     /// Accumulated log lines per option ID.
     @Published var serverLogs: [UUID: [String]] = [:]
+    /// Actual server URL detected from log output (overrides the allocated port).
+    @Published var detectedServerURLs: [UUID: URL] = [:]
 
     // MARK: - Derived accessors
 
-    /// Options belonging to the currently active experiment.
+    /// Options belonging to the currently active prototype.
     var options: [SpurOption] {
-        guard let id = currentExperimentId else { return [] }
-        return repoViewModel.appState?.options.filter { $0.experimentId == id } ?? []
+        guard let id = currentPrototypeId else { return [] }
+        return repoViewModel.appState?.options.filter { $0.prototypeId == id } ?? []
     }
 
     var selectedOption: SpurOption? {
         guard let id = selectedOptionId else { return nil }
-        return options.first { $0.id == id }
+        // Search allOptions so selection works across prototypes in the new sidebar.
+        return allOptions.first { $0.id == id }
+    }
+
+    /// All options across all prototypes.
+    var allOptions: [SpurOption] {
+        repoViewModel.appState?.options ?? []
+    }
+
+    /// Returns the prototype owning the given option.
+    func prototype(for option: SpurOption) -> Prototype? {
+        repoViewModel.appState?.prototypes.first { $0.id == option.prototypeId }
     }
 
     /// Log lines for the currently selected option.
@@ -41,7 +54,7 @@ final class OptionViewModel: ObservableObject {
     private let prService: PRService
     private let terminalService: TerminalService
     private let reconciliationService: ReconciliationService
-    private var currentExperimentId: UUID?
+    private var currentPrototypeId: UUID?
     private var cancellables = Set<AnyCancellable>()
     /// Active streaming tasks, one per running option.
     private var streamingTasks: [UUID: Task<Void, Never>] = [:]
@@ -66,13 +79,13 @@ final class OptionViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    // MARK: - Experiment switching
+    // MARK: - Prototype switching
 
-    /// Called by the workspace when the selected experiment changes.
-    func setExperiment(_ experiment: Experiment?) {
-        currentExperimentId = experiment?.id
+    /// Called by the workspace when the selected prototype changes.
+    func setPrototype(_ prototype: Prototype?) {
+        currentPrototypeId = prototype?.id
         objectWillChange.send()
-        if let sel = selectedOption, sel.experimentId != experiment?.id {
+        if let sel = selectedOption, sel.prototypeId != prototype?.id {
             selectedOptionId = nil
         }
     }
@@ -80,7 +93,7 @@ final class OptionViewModel: ObservableObject {
     // MARK: - Option creation
 
     /// Creates a branch+worktree for the new option, pushes it (Rule A), and persists.
-    func createOption(name: String, experiment: Experiment, source: BranchSource) async {
+    func createOption(name: String, prototype: Prototype, source: BranchSource) async {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, let repoPath = repoViewModel.currentRepo?.path else { return }
 
@@ -89,10 +102,10 @@ final class OptionViewModel: ObservableObject {
         defer { isLoading = false }
 
         let optionSlug   = SlugGenerator.generate(from: trimmed)
-        let branchName   = "\(Constants.branchPrefix)/\(experiment.slug)/\(optionSlug)"
+        let branchName   = "\(Constants.branchPrefix)/\(prototype.slug)/\(optionSlug)"
         let repoParent   = URL(fileURLWithPath: repoPath).deletingLastPathComponent().path
         let worktreePath = (repoParent as NSString)
-            .appendingPathComponent("\(Constants.worktreeDirectoryName)/\(experiment.slug)--\(optionSlug)")
+            .appendingPathComponent("\(Constants.worktreeDirectoryName)/\(prototype.slug)--\(optionSlug)")
 
         let usedPorts = Set(repoViewModel.appState?.options.map(\.port) ?? [])
         guard let port = try? PortAllocator.allocate(excluding: usedPorts) else {
@@ -117,17 +130,60 @@ final class OptionViewModel: ObservableObject {
             logger.error("Push failed for '\(branchName)': \(error.localizedDescription)")
         }
 
-        let option = SpurOption(
-            experimentId: experiment.id, name: trimmed, slug: optionSlug,
+        // Auto-install dependencies in the new worktree so the dev server works
+        // without requiring a manual `pnpm install`. Uses the offline store cache
+        // so subsequent installs are fast (no network required).
+        await installDependencies(in: worktreePath, repoPath: repoPath)
+
+        var option = SpurOption(
+            prototypeId: prototype.id, name: trimmed, slug: optionSlug,
             branchName: branchName, worktreePath: worktreePath, port: port
         )
+        // Inherit repo-level dev command if configured.
+        let repoDevCmd = repoViewModel.appState?.devCommand ?? ""
+        if !repoDevCmd.isEmpty { option.devCommand = repoDevCmd }
         repoViewModel.appState?.options.append(option)
-        if let idx = repoViewModel.appState?.experiments.firstIndex(where: { $0.id == experiment.id }) {
-            repoViewModel.appState?.experiments[idx].optionIds.append(option.id)
+        if let idx = repoViewModel.appState?.prototypes.firstIndex(where: { $0.id == prototype.id }) {
+            repoViewModel.appState?.prototypes[idx].optionIds.append(option.id)
         }
         repoViewModel.persistState()
         selectedOptionId = option.id
         logger.info("Created option '\(trimmed)' branch='\(branchName)' port=\(port)")
+    }
+
+    // MARK: - Dependency installation
+
+    /// Runs the repo's configured install command in `worktreePath`.
+    /// Falls back to lockfile-detection if no command is saved yet.
+    /// Failures are logged but do not block option creation.
+    private func installDependencies(in worktreePath: String, repoPath: String) async {
+        let saved = repoViewModel.appState?.installCommand ?? ""
+        let cmd = saved.isEmpty
+            ? Constants.packageManager(at: repoPath).installCommand
+            : saved
+        logger.info("Installing dependencies in worktree: \(cmd)")
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        let worktreeURL = URL(fileURLWithPath: worktreePath)
+        do {
+            let pty = try PTYProcess()
+            try pty.launch(
+                shell: shell,
+                arguments: ["-l", "-i", "-c", cmd],
+                environment: ["TERM": "xterm-256color"],
+                workingDirectory: worktreeURL
+            )
+            // Drain output so the process can make progress, but we don't surface
+            // individual lines — just wait for exit and check the status.
+            for await _ in pty.outputStream() {}
+            let exitCode = pty.terminationStatus
+            if exitCode == 0 {
+                logger.info("Dependency install succeeded in \(worktreePath)")
+            } else {
+                logger.error("Dependency install failed (exit \(exitCode)) in \(worktreePath)")
+            }
+        } catch {
+            logger.error("Dependency install threw: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - Dev server control
@@ -141,7 +197,15 @@ final class OptionViewModel: ObservableObject {
         updateOptionStatus(option.id, status: .running)
         serverLogs[option.id] = []
 
-        let command = repoViewModel.appState?.devCommand ?? Constants.defaultDevCommand
+        // Use the option-specific command unless it is still the generic default
+        // and the repo has a configured command saved via RepoSetupSheet.
+        let repoDevCmd = repoViewModel.appState?.devCommand ?? ""
+        let command: String
+        if option.devCommand == Constants.defaultDevCommand && !repoDevCmd.isEmpty {
+            command = repoDevCmd
+        } else {
+            command = option.devCommand
+        }
         let stream  = devServer.start(
             optionId: option.id,
             worktreePath: option.worktreePath,
@@ -154,11 +218,19 @@ final class OptionViewModel: ObservableObject {
             for await line in stream {
                 guard let self else { break }
                 self.serverLogs[id, default: []].append(line)
+                // Detect the actual bound URL from server output.
+                // Matches patterns like: http://localhost:5173  or  http://127.0.0.1:3000
+                if self.detectedServerURLs[id] == nil,
+                   let url = Self.extractLocalURL(from: line) {
+                    self.detectedServerURLs[id] = url
+                    logger.info("Detected server URL for option \(id): \(url)")
+                }
             }
             // Stream finished — server stopped
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.streamingTasks.removeValue(forKey: id)
+                self.detectedServerURLs.removeValue(forKey: id)
                 self.updateOptionStatus(id, status: .idle)
                 logger.info("Dev server stream ended for option \(id)")
             }
@@ -189,6 +261,44 @@ final class OptionViewModel: ObservableObject {
     /// Stops all running servers (called on app termination).
     func stopAllServers() {
         devServer.stopAll()
+    }
+
+    /// Updates the dev command for the given option and persists.
+    func updateDevCommand(_ command: String, for optionId: UUID) {
+        guard let idx = repoViewModel.appState?.options.firstIndex(where: { $0.id == optionId }) else { return }
+        repoViewModel.appState?.options[idx].devCommand = command
+        repoViewModel.persistState()
+        objectWillChange.send()
+    }
+
+    /// Stops the server (if running), removes the worktree, and deletes the option from state.
+    func removeOption(_ optionId: UUID) {
+        Task {
+            if devServer.isRunning(optionId: optionId) {
+                try? await devServer.stop(optionId: optionId)
+            }
+
+            // Remove git worktree
+            if let option = repoViewModel.appState?.options.first(where: { $0.id == optionId }),
+               let repoPath = repoViewModel.currentRepo?.path {
+                try? await git.removeWorktree(repoPath: repoPath, worktreePath: option.worktreePath)
+            }
+
+            guard let idx = repoViewModel.appState?.options.firstIndex(where: { $0.id == optionId }) else { return }
+            repoViewModel.appState?.options.remove(at: idx)
+
+            // Remove from all prototype optionIds lists
+            if let expIdx = repoViewModel.appState?.prototypes.firstIndex(where: {
+                $0.optionIds.contains(optionId)
+            }) {
+                repoViewModel.appState?.prototypes[expIdx].optionIds.removeAll { $0 == optionId }
+            }
+
+            if selectedOptionId == optionId { selectedOptionId = options.first?.id }
+            repoViewModel.persistState()
+            objectWillChange.send()
+            logger.info("Removed option \(optionId)")
+        }
     }
 
     // MARK: - Reconciliation
@@ -317,13 +427,13 @@ final class OptionViewModel: ObservableObject {
         }
     }
 
-    /// Creates a new Option branched from `turn.endCommit` in the given experiment.
-    func forkFromCheckpoint(turn: Turn, name: String, experiment: Experiment) async {
+    /// Creates a new Option branched from `turn.endCommit` in the given prototype.
+    func forkFromCheckpoint(turn: Turn, name: String, prototype: Prototype) async {
         guard let endCommit = turn.endCommit else {
             logger.error("forkFromCheckpoint: turn has no endCommit")
             return
         }
-        await createOption(name: name, experiment: experiment, source: .commit(endCommit))
+        await createOption(name: name, prototype: prototype, source: .commit(endCommit))
     }
 
     // MARK: - Private helpers
@@ -349,5 +459,14 @@ final class OptionViewModel: ObservableObject {
         repoViewModel.appState?.options[idx].status = status
         repoViewModel.persistState()
         objectWillChange.send()
+    }
+
+    /// Scans a log line for a local server URL and returns it if found.
+    /// Matches Vite, Next.js, webpack-dev-server, and most other dev servers.
+    static func extractLocalURL(from line: String) -> URL? {
+        // Match http://localhost:PORT or http://127.0.0.1:PORT
+        let pattern = #"https?://(localhost|127\.0\.0\.1):\d+"#
+        guard let range = line.range(of: pattern, options: .regularExpression) else { return nil }
+        return URL(string: String(line[range]))
     }
 }

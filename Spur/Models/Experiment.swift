@@ -1,6 +1,6 @@
 import Foundation
 
-struct Experiment: Codable, Identifiable {
+struct Prototype: Codable, Identifiable {
     let id: UUID
     var name: String
     var slug: String

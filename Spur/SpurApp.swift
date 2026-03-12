@@ -8,7 +8,7 @@ struct SpurApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(env.repoViewModel)
-                .environmentObject(env.experimentViewModel)
+                .environmentObject(env.prototypeViewModel)
                 .environmentObject(env.optionViewModel)
                 .task {
                     await env.repoViewModel.loadLastRepo()
@@ -20,7 +20,7 @@ struct SpurApp: App {
                     env.optionViewModel.stopAllServers()
                 }
         }
-        .windowStyle(.titleBar)
-        .windowToolbarStyle(.unified)
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 1200, height: 700)
     }
 }

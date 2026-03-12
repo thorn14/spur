@@ -1,4 +1,4 @@
-import Combine
+import AppKit
 import Foundation
 import os
 
@@ -6,100 +6,64 @@ private let logger = Logger(subsystem: Constants.appSubsystem, category: "Comman
 
 @MainActor
 final class CommandRunnerViewModel: ObservableObject {
+    @Published var attributedOutput: NSAttributedString = NSAttributedString()
+    // Keep outputLines for backward compat (ServerLogsView etc still use plain lines)
     @Published var outputLines: [String] = []
-    @Published var isRunning = false
-    @Published var error: Error?
 
-    private let runner: ProcessRunner
-    private let env = URL(fileURLWithPath: "/usr/bin/env")
-    private var runningProcess: Task<Void, Never>?
+    private let ansiBuffer = ANSITerminalBuffer()
+    private var pty: PTYProcess?
+    private var readTask: Task<Void, Never>?
+    private(set) var currentWorktreePath: String?
 
-    init(runner: ProcessRunner = ProcessRunner()) {
-        self.runner = runner
-    }
+    // MARK: - Lifecycle
 
-    // MARK: - Run
-
-    /// Parses `command` into tokens and executes it in `worktreePath` via ProcessRunner.stream().
-    func run(command: String, worktreePath: String) {
-        let tokens = Self.tokenize(command)
-        guard let executable = tokens.first, !executable.isEmpty else { return }
-
-        isRunning = true
-        error = nil
-        outputLines.append("$ \(command)")
-
-        let args = Array(tokens.dropFirst())
-        let cwd = URL(fileURLWithPath: worktreePath)
-
-        runningProcess = Task { [weak self] in
-            guard let self else { return }
-            let stream = self.runner.stream(
-                executable: self.env,
-                arguments: [executable] + args,
-                workingDirectory: cwd
+    func startIfNeeded(worktreePath: String) {
+        if pty != nil && currentWorktreePath == worktreePath { return }
+        stop()
+        currentWorktreePath = worktreePath
+        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
+        do {
+            let p = try PTYProcess()
+            try p.launch(
+                shell: shell,
+                arguments: ["-l", "-i"],
+                workingDirectory: URL(fileURLWithPath: worktreePath)
             )
-
-            for await output in stream {
-                guard !Task.isCancelled else { break }
-                switch output {
-                case .stdout(let line):
-                    self.outputLines.append(line)
-                case .stderr(let line):
-                    self.outputLines.append(line)
-                case .exit(let code):
-                    if code != 0 {
-                        self.outputLines.append("[exit \(code)]")
-                    }
+            pty = p
+            readTask = Task { [weak self] in
+                guard let self else { return }
+                for await chunk in p.rawOutputStream() {
+                    let cleared = self.ansiBuffer.append(chunk)
+                    if cleared { self.ansiBuffer.clear() }
+                    self.attributedOutput = self.ansiBuffer.attributedText.copy() as! NSAttributedString
                 }
+                self.ansiBuffer.append("\n[spur] Shell exited.\n")
+                self.attributedOutput = self.ansiBuffer.attributedText.copy() as! NSAttributedString
+                self.pty = nil
+                logger.info("Shell exited for \(worktreePath)")
             }
-            self.isRunning = false
-            self.runningProcess = nil
-            logger.debug("Command finished: \(command)")
+        } catch {
+            ansiBuffer.append("[spur] Failed to start shell: \(error.localizedDescription)\n")
+            attributedOutput = ansiBuffer.attributedText.copy() as! NSAttributedString
+            logger.error("Shell start failed: \(error)")
         }
     }
 
-    /// Cancels the currently running command.
-    func cancel() {
-        runningProcess?.cancel()
-        runningProcess = nil
-        isRunning = false
+    /// Writes a line of text to the shell's stdin, exactly as if the user typed it and pressed Enter.
+    func send(_ text: String) {
+        pty?.write(text + "\n")
     }
 
     func clearOutput() {
+        ansiBuffer.clear()
+        attributedOutput = NSAttributedString()
         outputLines = []
     }
 
-    // MARK: - Command tokenizer
-
-    /// Splits a shell-style command string into tokens, respecting single and double quotes.
-    /// Examples:
-    ///   "npm run build"               → ["npm", "run", "build"]
-    ///   "git commit -m \"my message\"" → ["git", "commit", "-m", "my message"]
-    static func tokenize(_ command: String) -> [String] {
-        var tokens: [String] = []
-        var current = ""
-        var inSingle = false
-        var inDouble = false
-
-        for ch in command {
-            switch ch {
-            case "'":
-                if inDouble { current.append(ch) } else { inSingle.toggle() }
-            case "\"":
-                if inSingle { current.append(ch) } else { inDouble.toggle() }
-            case " ", "\t":
-                if inSingle || inDouble {
-                    current.append(ch)
-                } else if !current.isEmpty {
-                    tokens.append(current)
-                    current = ""
-                }
-            default:
-                current.append(ch)
-            }
-        }
-        if !current.isEmpty { tokens.append(current) }
-        return tokens
+    func stop() {
+        pty?.forceKill()
+        pty = nil
+        readTask?.cancel()
+        readTask = nil
     }
 }

@@ -10,7 +10,7 @@ private let logger = Logger(subsystem: Constants.appSubsystem, category: "AppEnv
 @MainActor
 final class AppEnvironment: ObservableObject {
     let repoViewModel: RepoViewModel
-    let experimentViewModel: ExperimentViewModel
+    let prototypeViewModel: PrototypeViewModel
     let optionViewModel: OptionViewModel
     let devServerService: DevServerService
 
@@ -22,7 +22,7 @@ final class AppEnvironment: ObservableObject {
         let devServer = DevServerService()
         let rvm       = RepoViewModel(persistence: persistence)
         self.repoViewModel       = rvm
-        self.experimentViewModel = ExperimentViewModel(repoViewModel: rvm)
+        self.prototypeViewModel = PrototypeViewModel(repoViewModel: rvm)
         self.optionViewModel     = OptionViewModel(repoViewModel: rvm, git: git, devServer: devServer)
         self.devServerService    = devServer
         logger.debug("AppEnvironment initialized")

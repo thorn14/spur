@@ -1,7 +1,7 @@
 import SwiftUI
 
-struct NewExperimentSheet: View {
-    @EnvironmentObject var experimentViewModel: ExperimentViewModel
+struct NewPrototypeSheet: View {
+    @EnvironmentObject var prototypeViewModel: PrototypeViewModel
     @Environment(\.dismiss) private var dismiss
 
     @State private var name = ""
@@ -13,7 +13,7 @@ struct NewExperimentSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("New Experiment")
+            Text("New Prototype")
                 .font(.headline)
                 .frame(maxWidth: .infinity, alignment: .center)
 
@@ -32,7 +32,7 @@ struct NewExperimentSheet: View {
                 }
             }
 
-            if let error = experimentViewModel.error {
+            if let error = prototypeViewModel.error {
                 Text(error.localizedDescription)
                     .foregroundColor(.red)
                     .font(.caption)
@@ -53,13 +53,13 @@ struct NewExperimentSheet: View {
         .frame(minWidth: 360, minHeight: 180)
         .onAppear {
             nameFieldFocused = true
-            experimentViewModel.error = nil
+            prototypeViewModel.error = nil
         }
     }
 
     private func createIfValid() {
         guard isValid else { return }
-        experimentViewModel.createExperiment(name: name)
+        prototypeViewModel.createPrototype(name: name)
         dismiss()
     }
 }

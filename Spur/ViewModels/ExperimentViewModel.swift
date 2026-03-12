@@ -2,26 +2,26 @@ import Combine
 import Foundation
 import os
 
-private let logger = Logger(subsystem: Constants.appSubsystem, category: "ExperimentViewModel")
+private let logger = Logger(subsystem: Constants.appSubsystem, category: "PrototypeViewModel")
 
 @MainActor
-final class ExperimentViewModel: ObservableObject {
+final class PrototypeViewModel: ObservableObject {
     // MARK: - Published state
 
-    /// ID of the currently selected experiment.
-    @Published var selectedExperimentId: UUID?
+    /// ID of the currently selected prototype.
+    @Published var selectedPrototypeId: UUID?
     /// Non-nil when an operation fails.
     @Published var error: Error?
 
     // MARK: - Derived accessors (computed from AppState — no duplication)
 
-    var experiments: [Experiment] {
-        repoViewModel.appState?.experiments ?? []
+    var prototypes: [Prototype] {
+        repoViewModel.appState?.prototypes ?? []
     }
 
-    var selectedExperiment: Experiment? {
-        guard let id = selectedExperimentId else { return nil }
-        return experiments.first { $0.id == id }
+    var selectedPrototype: Prototype? {
+        guard let id = selectedPrototypeId else { return nil }
+        return prototypes.first { $0.id == id }
     }
 
     // MARK: - Dependencies
@@ -31,7 +31,7 @@ final class ExperimentViewModel: ObservableObject {
 
     init(repoViewModel: RepoViewModel) {
         self.repoViewModel = repoViewModel
-        // Forward AppState mutations so observing views re-render when experiments list changes.
+        // Forward AppState mutations so observing views re-render when prototypes list changes.
         repoViewModel.$appState
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
@@ -39,17 +39,17 @@ final class ExperimentViewModel: ObservableObject {
 
     // MARK: - Actions
 
-    /// Creates an experiment, persists it, and selects it immediately.
-    func createExperiment(name: String) {
+    /// Creates an prototype, persists it, and selects it immediately.
+    func createPrototype(name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
         error = nil
 
         let slug = SlugGenerator.generate(from: trimmed)
-        let experiment = Experiment(name: trimmed, slug: slug)
-        repoViewModel.appState?.experiments.append(experiment)
+        let prototype = Prototype(name: trimmed, slug: slug)
+        repoViewModel.appState?.prototypes.append(prototype)
         repoViewModel.persistState()
-        selectedExperimentId = experiment.id
-        logger.info("Created experiment '\(trimmed)' slug='\(slug)'")
+        selectedPrototypeId = prototype.id
+        logger.info("Created prototype '\(trimmed)' slug='\(slug)'")
     }
 }

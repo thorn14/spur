@@ -1,9 +1,9 @@
 import SwiftUI
 
 struct OptionTabBar: View {
-    @EnvironmentObject var experimentViewModel: ExperimentViewModel
+    @EnvironmentObject var prototypeViewModel: PrototypeViewModel
     @EnvironmentObject var optionViewModel: OptionViewModel
-    @State private var newOptionExperiment: Experiment?
+    @State private var newOptionPrototype: Prototype?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -11,15 +11,26 @@ struct OptionTabBar: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 0) {
                     if optionViewModel.options.isEmpty {
-                        Text("No options — click + to create one")
+                        if let prototype = prototypeViewModel.selectedPrototype {
+                            Button("New Option") {
+                                newOptionPrototype = prototype
+                            }
+                            .buttonStyle(.plain)
                             .font(.caption)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.accentColor)
                             .padding(.horizontal, 12)
+                        } else {
+                            Text("Select an prototype to add options")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.horizontal, 12)
+                        }
                     } else {
                         ForEach(optionViewModel.options) { option in
                             OptionTab(
                                 option: option,
-                                isSelected: option.id == optionViewModel.selectedOptionId
+                                isSelected: option.id == optionViewModel.selectedOptionId,
+                                onClose: { optionViewModel.removeOption(option.id) }
                             )
                             .onTapGesture { optionViewModel.selectedOptionId = option.id }
                         }
@@ -32,7 +43,7 @@ struct OptionTabBar: View {
 
             // Add-option button
             Button {
-                newOptionExperiment = experimentViewModel.selectedExperiment
+                newOptionPrototype = prototypeViewModel.selectedPrototype
             } label: {
                 Image(systemName: "plus")
                     .padding(.horizontal, 10)
@@ -40,13 +51,13 @@ struct OptionTabBar: View {
             }
             .buttonStyle(.plain)
             .help("New Option (⌘T)")
-            .disabled(experimentViewModel.selectedExperiment == nil)
+            .disabled(prototypeViewModel.selectedPrototype == nil)
             .keyboardShortcut("t", modifiers: .command)
         }
         .frame(height: 36)
         .background(Color(NSColor.windowBackgroundColor))
-        .sheet(item: $newOptionExperiment) { experiment in
-            NewOptionSheet(experiment: experiment)
+        .sheet(item: $newOptionPrototype) { prototype in
+            NewOptionSheet(prototype: prototype)
         }
     }
 }
@@ -56,6 +67,9 @@ struct OptionTabBar: View {
 private struct OptionTab: View {
     let option: SpurOption
     let isSelected: Bool
+    let onClose: () -> Void
+
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 5) {
@@ -65,8 +79,20 @@ private struct OptionTab: View {
             Text(option.name)
                 .font(.system(size: 12, weight: isSelected ? .medium : .regular))
                 .lineLimit(1)
+            // Close button — visible on hover or when selected
+            Button {
+                onClose()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .medium))
+                    .frame(width: 14, height: 14)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .opacity(isHovered || isSelected ? 1 : 0)
+            .help("Close option")
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
         .overlay(alignment: .bottom) {
@@ -77,6 +103,7 @@ private struct OptionTab: View {
             }
         }
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
         .help("Port \(option.port) · \(option.branchName)")
     }
 
