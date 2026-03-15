@@ -12,10 +12,8 @@ struct ContentView: View {
                 loadingView
             } else if repoViewModel.currentRepo == nil {
                 RepoPickerView()
-                    .preferredColorScheme(.dark)
             } else {
                 WorkspaceView()
-                    .preferredColorScheme(.dark)
                     .sheet(isPresented: Binding(
                         get: { repoViewModel.appState?.needsSetup ?? false },
                         set: { _ in }
@@ -40,7 +38,6 @@ struct ContentView: View {
                     .foregroundColor(SpurColors.textMuted)
             }
         }
-        .preferredColorScheme(.dark)
         .frame(width: 300, height: 200)
     }
 }
@@ -59,13 +56,13 @@ private struct WorkspaceView: View {
             // Left: worktree card sidebar
             WorktreeSidebarView()
 
-            Rectangle().fill(SpurColors.border).frame(width: 1)
+            FilmStripDivider()
 
             // Center: web preview
             OptionDetailView()
                 .frame(maxWidth: .infinity)
 
-            Rectangle().fill(SpurColors.border).frame(width: 1)
+            FilmStripDivider()
 
             // Drag handle to resize right panel
             Color.clear

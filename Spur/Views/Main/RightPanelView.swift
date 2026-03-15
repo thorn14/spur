@@ -31,12 +31,12 @@ struct RightPanelView: View {
                             Image(systemName: tab.icon).font(.system(size: 11))
                             Text(tab.rawValue).font(.system(size: 12, weight: .medium))
                         }
-                        .foregroundColor(selectedTab == tab ? SpurColors.accent : SpurColors.textSecondary)
+                        .foregroundColor(selectedTab == tab ? SpurColors.textPrimary : SpurColors.textSecondary)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                         .overlay(alignment: .bottom) {
                             if selectedTab == tab {
-                                Rectangle().fill(SpurColors.accent).frame(height: 1)
+                                Rectangle().fill(SpurColors.textPrimary).frame(height: 1)
                             }
                         }
                     }
@@ -46,7 +46,7 @@ struct RightPanelView: View {
                 if let option {
                     HStack(spacing: 4) {
                         Circle()
-                            .fill(option.status == .running ? SpurColors.accent : SpurColors.textMuted)
+                            .fill(option.status == .running ? SpurColors.statusRunning : SpurColors.statusIdle)
                             .frame(width: 6, height: 6)
                         Text(option.name)
                             .font(.system(size: 10, design: .monospaced))
@@ -56,7 +56,7 @@ struct RightPanelView: View {
                     .padding(.horizontal, 10)
                 }
             }
-            .background(SpurColors.surface)
+            .background(.bar)
 
             Rectangle().fill(SpurColors.border).frame(height: 1)
 
@@ -77,7 +77,8 @@ struct RightPanelView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(SpurColors.background)
         }
-        .background(SpurColors.background)
+        .background(.ultraThinMaterial)
+        .overlay(FilmGrainOverlay())
     }
 
     private func noSelectionView(_ message: String) -> some View {
@@ -125,8 +126,7 @@ struct ServerLogsView: View {
 
     private func logLineColor(_ line: String) -> Color {
         if line.hasPrefix("[spur]") { return SpurColors.textMuted }
-        if line.contains("error") || line.contains("Error") || line.hasPrefix("[stderr]") { return Color(hex: "F87171") }
-        if line.contains("localhost") || line.contains("http") { return SpurColors.accent }
+        if line.contains("error") || line.contains("Error") || line.hasPrefix("[stderr]") { return SpurColors.statusError }
         return SpurColors.textSecondary
     }
 }
@@ -152,7 +152,7 @@ struct InlineTerminalView: View {
             HStack(spacing: 0) {
                 Text("$ ")
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(SpurColors.accent)
+                    .foregroundColor(SpurColors.textPrimary)
                 TextField("", text: $commandText)
                     .font(.system(size: 11, design: .monospaced))
                     .textFieldStyle(.plain)

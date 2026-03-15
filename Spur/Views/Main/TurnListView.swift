@@ -166,7 +166,7 @@ private struct EmptyTurnsView: View {
                 .font(.subheadline)
                 .foregroundColor(SpurColors.textSecondary)
             Button("New Turn", action: onNewTurn)
-                .buttonStyle(GreenButtonStyle())
+                .buttonStyle(SpurButtonStyle())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
