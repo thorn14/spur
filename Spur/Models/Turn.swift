@@ -11,7 +11,7 @@ struct Turn: Codable, Identifiable {
     /// All commit hashes between startCommit (exclusive) and endCommit (inclusive).
     var commitRange: [String]
     var createdAt: Date
-    /// True when this turn was created automatically by the checkpoint timer.
+    /// True when this turn was created automatically by Spur (for example on option creation/resume or for terminal-triggered snapshots).
     var isAutomatic: Bool
 
     init(
