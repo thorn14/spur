@@ -436,13 +436,12 @@ final class OptionViewModel: ObservableObject {
                 await startTurnInternal(for: updatedOption, isAutomatic: true)
             }
 
-            // 4. Push the reset state
+            // 4. Decide what to do about the remote branch.
+            //    After a hard reset, a normal push will usually fail with a non-fast-forward error.
+            //    We intentionally do NOT push here; if the user wants the remote to match this rollback,
+            //    they should perform a force push (ideally with --force-with-lease) manually.
             if let repoPath = repoViewModel.currentRepo?.path {
-                do {
-                    try await git.push(repoPath: repoPath, branch: option.branchName)
-                } catch {
-                    logger.error("Push after rollback failed: \(error.localizedDescription)")
-                }
+                logger.warning("Rollback to checkpoint was applied locally at \(repoPath) on branch \(option.branchName). Remote branch NOT updated automatically. If you want the remote to match, run a force push (e.g. 'git push --force-with-lease origin \(option.branchName)').")
             }
 
             logger.info("Rolled back option \(option.id) to \(endCommit)")
