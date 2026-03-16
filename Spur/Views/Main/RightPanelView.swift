@@ -60,18 +60,32 @@ struct RightPanelView: View {
 
             Rectangle().fill(SpurColors.border).frame(height: 1)
 
-            Group {
-                switch selectedTab {
-                case .terminal:
+            ZStack {
+                // Terminal is always kept in the view hierarchy to preserve the shell session.
+                // It is hidden (not removed) when another tab is active.
+                Group {
                     if let option {
-                        SpurTerminalView(worktreePath: option.worktreePath)
+                        SpurTerminalView(
+                            worktreePath: option.worktreePath,
+                            onEnterPressed: {
+                                guard selectedTab == .terminal else { return }
+                                optionViewModel.snapshotBeforeCommand(for: option.id)
+                            }
+                        )
                     } else {
                         noSelectionView("Select a worktree to open a terminal")
                     }
-                case .logs:
+                }
+                .opacity(selectedTab == .terminal ? 1 : 0)
+                .allowsHitTesting(selectedTab == .terminal)
+
+                if selectedTab == .logs {
                     ServerLogsView(logs: optionViewModel.currentLogs)
-                case .git:
+                        .transition(.identity)
+                }
+                if selectedTab == .git {
                     TurnListView().environmentObject(optionViewModel)
+                        .transition(.identity)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
