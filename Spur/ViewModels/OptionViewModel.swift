@@ -490,11 +490,6 @@ final class OptionViewModel: ObservableObject {
             }
 
             logger.info("Captured \(isAutomatic ? "auto-" : "")checkpoint for turn \(turn.number): \(endCommit)")
-
-            // Auto-open the next turn so recording is continuous.
-            if let updatedOption = allOptions.first(where: { $0.id == option.id }) {
-                await startTurnInternal(for: updatedOption, isAutomatic: true)
-            }
         } catch {
             if !isAutomatic { self.error = error }
             logger.error("performCheckpoint failed for option \(option.id): \(error.localizedDescription)")
