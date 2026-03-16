@@ -102,7 +102,9 @@ enum SpurColors {
                                                      .accessibilityHighContrastDarkAqua,
                                                      .accessibilityHighContrastVibrantDark]) != nil
             let (r, g, b) = isDark ? dark : light
-            return NSColor(sRGBRed: r, green: g, blue: b, alpha: 1)
+            let components: [CGFloat] = [r, g, b, 1.0]
+            let cgColor = CGColor(colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!, components: components)!
+            return NSColor(cgColor: cgColor) ?? NSColor(white: r, alpha: 1.0)
         })
     }
 }
