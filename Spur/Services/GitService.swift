@@ -177,6 +177,19 @@ final class GitService {
             .filter { !$0.isEmpty }
     }
 
+    // MARK: - Rollback
+
+    /// Hard-resets the worktree to a specific commit hash, discarding all subsequent commits and
+    /// any uncommitted changes. The worktree HEAD will point to `toCommit` afterwards.
+    func resetWorktree(worktreePath: String, toCommit: String) async throws {
+        logger.debug("resetWorktree: path=\(worktreePath) commit=\(toCommit)")
+        let result = try await git(in: worktreePath, args: ["reset", "--hard", toCommit])
+        guard result.exitCode == 0 else {
+            throw GitServiceError.commandFailed("reset --hard \(toCommit)", result.exitCode, result.stderr)
+        }
+        logger.info("Reset worktree '\(worktreePath)' to \(toCommit)")
+    }
+
     // MARK: - Working tree state
 
     /// Returns `true` if the worktree has any staged or unstaged changes (tracked or untracked files).

@@ -119,6 +119,23 @@ final class ModelTests: XCTestCase {
         XCTAssertTrue(turn.commitRange.isEmpty)
     }
 
+    func testTurnIsAutomaticDefaultsFalseWhenMissing() throws {
+        // Older persisted JSON without the isAutomatic field should decode with isAutomatic == false.
+        let json = """
+        {"id":"12345678-1234-1234-1234-123456789012","number":1,"label":"Old Turn",\
+        "startCommit":"abc123","commitRange":[],"createdAt":"2024-01-01T00:00:00Z"}
+        """.data(using: .utf8)!
+        let turn = try decoder.decode(Turn.self, from: json)
+        XCTAssertFalse(turn.isAutomatic, "isAutomatic must default to false for pre-existing persisted turns")
+    }
+
+    func testTurnIsAutomaticRoundtrip() throws {
+        let turn = Turn(number: 2, label: "Auto", startCommit: "def456", isAutomatic: true)
+        let data = try encoder.encode(turn)
+        let decoded = try decoder.decode(Turn.self, from: data)
+        XCTAssertTrue(decoded.isAutomatic)
+    }
+
     // MARK: - AppState
 
     func testAppStateRoundtrip() throws {
