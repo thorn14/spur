@@ -470,10 +470,14 @@ final class OptionViewModel: ObservableObject {
             )
             let endCommit = try await git.getCurrentHead(worktreePath: option.worktreePath)
 
-            // Skip if nothing actually changed since turn start
-            guard endCommit != turn.startCommit || !commits.isEmpty else {
-                logger.debug("performCheckpoint: no changes since turn \(turn.number) start, skipping")
-                return
+            // Skip if nothing actually changed since turn start for automatic checkpoints only.
+            if endCommit == turn.startCommit && commits.isEmpty {
+                if isAutomatic {
+                    logger.debug("performCheckpoint: no changes since turn \(turn.number) start, skipping auto-checkpoint")
+                    return
+                } else {
+                    logger.info("performCheckpoint: no changes since turn \(turn.number) start, closing manual checkpoint with empty commit range")
+                }
             }
 
             updateTurn(turn.id, in: option.id) { t in
