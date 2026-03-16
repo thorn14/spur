@@ -50,7 +50,7 @@ struct TurnListView: View {
                     Label("New Exploration", systemImage: "tuningfork")
                         .font(.system(size: 11, weight: .semibold))
                 }
-                .buttonStyle(GreenButtonStyle())
+                .buttonStyle(SpurButtonStyle())
                 .disabled(latestCaptured == nil || optionViewModel.isLoading)
                 .help("Fork a new option from the latest checkpoint")
             }
