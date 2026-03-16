@@ -384,11 +384,19 @@ final class OptionViewModel: ObservableObject {
                 return
             }
 
-            // Only capture if there are actual changes to snapshot.
+            // Only capture if there are changes to snapshot: either uncommitted files
+            // or new commits made since the turn started (e.g. by a tool that commits directly).
             do {
-                guard try await git.hasUncommittedChanges(worktreePath: option.worktreePath) else { return }
+                let dirty = try await git.hasUncommittedChanges(worktreePath: option.worktreePath)
+                if !dirty {
+                    let newCommits = try await git.getCommitsSince(
+                        hash: openTurn.startCommit,
+                        worktreePath: option.worktreePath
+                    )
+                    guard !newCommits.isEmpty else { return }
+                }
             } catch {
-                logger.debug("snapshotBeforeCommand: hasUncommittedChanges failed for \(optionId): \(error)")
+                logger.debug("snapshotBeforeCommand: change detection failed for \(optionId): \(error)")
                 return
             }
 
@@ -493,6 +501,11 @@ final class OptionViewModel: ObservableObject {
             }
 
             logger.info("Captured \(isAutomatic ? "auto-" : "")checkpoint for turn \(turn.number): \(endCommit)")
+
+            // Immediately open the next turn so the next command is recorded.
+            if let updatedOption = allOptions.first(where: { $0.id == option.id }) {
+                await startTurnInternal(for: updatedOption, isAutomatic: true)
+            }
         } catch {
             if !isAutomatic { self.error = error }
             logger.error("performCheckpoint failed for option \(option.id): \(error.localizedDescription)")

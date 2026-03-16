@@ -354,6 +354,42 @@ final class GitServiceTests: XCTestCase {
         XCTAssertFalse(try await service.hasUncommittedChanges(worktreePath: repoURL.path))
     }
 
+    // MARK: - resetWorktree
+
+    func testResetWorktreeRestoresHead() async throws {
+        let originalHead = try await service.getCurrentHead(worktreePath: repoURL.path)
+        try await makeCommit(filename: "reset-test.txt", content: "new", message: "Add file")
+        let headAfterCommit = try await service.getCurrentHead(worktreePath: repoURL.path)
+        XCTAssertNotEqual(originalHead, headAfterCommit)
+
+        try await service.resetWorktree(worktreePath: repoURL.path, toCommit: originalHead)
+        let headAfterReset = try await service.getCurrentHead(worktreePath: repoURL.path)
+        XCTAssertEqual(headAfterReset, originalHead)
+    }
+
+    func testResetWorktreeRestoresFileContents() async throws {
+        let filePath = repoURL.appendingPathComponent("README.md")
+        let originalContent = try String(contentsOf: filePath, encoding: .utf8)
+        let originalHead = try await service.getCurrentHead(worktreePath: repoURL.path)
+
+        try "modified content".write(to: filePath, atomically: true, encoding: .utf8)
+        _ = try await service.commitAll(worktreePath: repoURL.path, message: "[spur] modify README")
+
+        try await service.resetWorktree(worktreePath: repoURL.path, toCommit: originalHead)
+        let contentAfterReset = try String(contentsOf: filePath, encoding: .utf8)
+        XCTAssertEqual(contentAfterReset, originalContent)
+    }
+
+    func testResetWorktreeToInvalidCommitThrows() async throws {
+        let badHash = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        do {
+            try await service.resetWorktree(worktreePath: repoURL.path, toCommit: badHash)
+            XCTFail("Expected GitServiceError.commandFailed")
+        } catch GitServiceError.commandFailed {
+            // expected
+        }
+    }
+
     // MARK: - parseWorktreeList (parser unit tests — no git needed)
 
     func testParseWorktreeListTwoEntries() {

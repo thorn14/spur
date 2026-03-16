@@ -86,6 +86,23 @@ struct TurnListView: View {
         .sheet(item: $turnToFork) { turn in
             if let prototype = prototypeViewModel.selectedPrototype {
                 ForkFromCheckpointSheet(turn: turn, prototype: prototype)
+            } else {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 28))
+                        .foregroundColor(SpurColors.textMuted)
+                    Text("No Prototype Selected")
+                        .font(.headline)
+                        .foregroundColor(SpurColors.textPrimary)
+                    Text("Select a prototype in the sidebar before forking a checkpoint.")
+                        .font(.caption)
+                        .foregroundColor(SpurColors.textMuted)
+                        .multilineTextAlignment(.center)
+                    Button("Dismiss") { turnToFork = nil }
+                        .buttonStyle(.bordered)
+                }
+                .padding(24)
+                .frame(width: 320)
             }
         }
         // Roll-back confirmation
