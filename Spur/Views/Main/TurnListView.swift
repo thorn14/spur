@@ -50,7 +50,7 @@ struct TurnListView: View {
                     Label("New Exploration", systemImage: "tuningfork")
                         .font(.system(size: 11, weight: .semibold))
                 }
-                .buttonStyle(GreenButtonStyle())
+                .buttonStyle(SpurButtonStyle())
                 .disabled(latestCaptured == nil || optionViewModel.isLoading)
                 .help("Fork a new option from the latest checkpoint")
             }
@@ -62,7 +62,7 @@ struct TurnListView: View {
 
             // ── Turn list ────────────────────────────────────────────────
             if turns.isEmpty {
-                EmptyCheckpointsView()
+                EmptyCheckpointsView(onNewTurn: { Task { await optionViewModel.startTurn() } })
             } else {
                 List {
                     ForEach(turns) { turn in
@@ -233,6 +233,8 @@ private struct CommitTag: View {
 }
 
 private struct EmptyCheckpointsView: View {
+    var onNewTurn: (() -> Void)?
+
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: "clock.arrow.2.circlepath")
@@ -245,6 +247,10 @@ private struct EmptyCheckpointsView: View {
                 .font(.caption)
                 .foregroundColor(SpurColors.textMuted)
                 .multilineTextAlignment(.center)
+            if let onNewTurn {
+                Button("New Turn", action: onNewTurn)
+                    .buttonStyle(SpurButtonStyle())
+            }
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)

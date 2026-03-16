@@ -94,7 +94,7 @@ private struct BrowserChromeBar: View {
             // URL pill
             HStack(spacing: 5) {
                 Circle()
-                    .fill(isRunning ? SpurColors.accent : SpurColors.textMuted)
+                    .fill(isRunning ? SpurColors.statusRunning : SpurColors.statusIdle)
                     .frame(width: 6, height: 6)
                 Text(url)
                     .font(.system(size: 11, design: .monospaced))
@@ -131,16 +131,16 @@ private struct BrowserChromeBar: View {
 
             Button(isRunning ? "Stop" : "Start") { onStartStop() }
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(isRunning ? Color(hex: "F87171") : SpurColors.accent)
+                .foregroundColor(isRunning ? SpurColors.statusError : SpurColors.accent)
                 .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(isRunning ? Color(hex: "F87171").opacity(0.1) : SpurColors.portBadgeBg)
+                .background(isRunning ? SpurColors.statusError.opacity(0.10) : SpurColors.accentBackground)
                 .clipShape(RoundedRectangle(cornerRadius: 5))
                 .buttonStyle(.plain)
                 .padding(.trailing, 4)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(SpurColors.surface)
+        .background(.bar)
     }
 
     @ViewBuilder
@@ -176,7 +176,7 @@ private struct ServerOffPlaceholder: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(SpurColors.textSecondary)
             Button("Start Server", action: onStart)
-                .buttonStyle(GreenButtonStyle())
+                .buttonStyle(SpurButtonStyle())
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(SpurColors.background)
@@ -199,7 +199,7 @@ private struct EmptyOptionView: View {
                 .foregroundColor(SpurColors.textSecondary)
             if let prototype = prototypeViewModel.selectedPrototype {
                 Button("New Option") { showNewOption = true }
-                    .buttonStyle(GreenButtonStyle())
+                    .buttonStyle(SpurButtonStyle())
                     .sheet(isPresented: $showNewOption) { NewOptionSheet(prototype: prototype) }
             } else {
                 Text("Select a worktree from the sidebar")

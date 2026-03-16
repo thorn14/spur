@@ -80,7 +80,7 @@ struct RepoSetupSheet: View {
                     )
                     dismiss()
                 }
-                .buttonStyle(GreenButtonStyle())
+                .buttonStyle(SpurButtonStyle())
                 .disabled(!canSave)
                 .keyboardShortcut(.defaultAction)
             }
@@ -88,7 +88,6 @@ struct RepoSetupSheet: View {
         .padding(28)
         .frame(minWidth: 460, minHeight: 380)
         .background(SpurColors.background)
-        .preferredColorScheme(.dark)
     }
 
     // MARK: - Command field

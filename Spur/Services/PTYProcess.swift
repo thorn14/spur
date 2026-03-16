@@ -184,13 +184,14 @@ final class PTYProcess {
         let pid = process.processIdentifier
         setpgid(pid, pid)
         kill(-pid, SIGTERM)
+        let proc = process
         await withCheckedContinuation { cont in
-            DispatchQueue.global(qos: .utility).async { [weak self] in
+            DispatchQueue.global(qos: .utility).async {
                 let deadline = Date(timeIntervalSinceNow: Constants.devServerKillTimeout)
-                while (self?.process.isRunning ?? false) && Date() < deadline {
+                while proc.isRunning && Date() < deadline {
                     Thread.sleep(forTimeInterval: 0.1)
                 }
-                if self?.process.isRunning ?? false { kill(-pid, SIGKILL) }
+                if proc.isRunning { kill(-pid, SIGKILL) }
                 cont.resume()
             }
         }

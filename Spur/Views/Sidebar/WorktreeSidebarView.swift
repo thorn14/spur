@@ -110,7 +110,7 @@ struct WorktreeSidebarView: View {
                 }
             }
         }
-        .background(SpurColors.background)
+        .background(.ultraThinMaterial)
         .frame(width: 260)
         .sheet(item: $newOptionPrototype) { NewOptionSheet(prototype: $0) }
         .sheet(isPresented: $showNewPrototype) { NewPrototypeSheet() }
@@ -222,9 +222,9 @@ private struct WorktreeCard: View {
     private var statusColor: Color {
         switch option.status {
         case .idle:     return SpurColors.textMuted
-        case .running:  return SpurColors.accent
-        case .detached: return .orange
-        case .error:    return .red
+        case .running:  return SpurColors.statusRunning
+        case .detached: return SpurColors.statusWarning
+        case .error:    return SpurColors.statusError
         }
     }
 }
@@ -265,10 +265,10 @@ private struct WorktreeEmptyState: View {
                 .foregroundColor(SpurColors.textSecondary)
             if hasPrototypes {
                 Button("New Option", action: onNewOption)
-                    .buttonStyle(GreenButtonStyle())
+                    .buttonStyle(SpurButtonStyle())
             } else {
                 Button("New Prototype", action: onNewPrototype)
-                    .buttonStyle(GreenButtonStyle())
+                    .buttonStyle(SpurButtonStyle())
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
