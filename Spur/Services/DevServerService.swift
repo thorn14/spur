@@ -32,10 +32,9 @@ final class DevServerService {
 
     // MARK: - State
 
-    /// Protected by `serversLock`. Accessed from main thread (OptionViewModel) and
-    /// background threads (PTY output loop).
-    private var servers: [UUID: RunningServer] = [:]
-    private let serversLock = NSLock()
+    /// State is protected by `OSAllocatedUnfairLock`, which — unlike `NSLock` —
+    /// is safe to call from async contexts.
+    private let state = OSAllocatedUnfairLock(initialState: [UUID: RunningServer]())
 
     deinit {
         killAll()
@@ -51,9 +50,7 @@ final class DevServerService {
         port: Int,
         command: String = Constants.defaultDevCommand
     ) -> AsyncStream<String> {
-        serversLock.lock()
-        let alreadyRunning = servers[optionId] != nil
-        serversLock.unlock()
+        let alreadyRunning = state.withLock { $0[optionId] != nil }
 
         guard !alreadyRunning else {
             return AsyncStream { continuation in
@@ -108,9 +105,7 @@ final class DevServerService {
                 return
             }
 
-            serversLock.lock()
-            servers[optionId] = RunningServer(pty: pty, continuation: continuation)
-            serversLock.unlock()
+            state.withLock { $0[optionId] = RunningServer(pty: pty, continuation: continuation) }
 
             logger.info("Dev server started for option \(optionId) port=\(port)")
 
@@ -121,9 +116,7 @@ final class DevServerService {
                 }
                 // PTY output loop ended — process has exited.
                 continuation.finish()
-                self?.serversLock.lock()
-                self?.servers.removeValue(forKey: optionId)
-                self?.serversLock.unlock()
+                self?.state.withLock { $0[optionId] = nil }
                 logger.info("Dev server for option \(optionId) exited")
             }
 
@@ -143,17 +136,13 @@ final class DevServerService {
     }
 
     func isRunning(optionId: UUID) -> Bool {
-        serversLock.lock()
-        defer { serversLock.unlock() }
-        return servers[optionId] != nil
+        state.withLock { $0[optionId] != nil }
     }
 
     /// Stops all running servers. Called on app termination.
     /// Fires an unstructured Task so the caller does not have to be async.
     func stopAll() {
-        serversLock.lock()
-        let ids = Array(servers.keys)
-        serversLock.unlock()
+        let ids = state.withLock { Array($0.keys) }
 
         Task {
             for id in ids {
@@ -165,9 +154,7 @@ final class DevServerService {
     // MARK: - Private helpers
 
     private func server(for optionId: UUID) -> RunningServer? {
-        serversLock.lock()
-        defer { serversLock.unlock() }
-        return servers[optionId]
+        state.withLock { $0[optionId] }
     }
 
     private func terminateGracefully(optionId: UUID) async {
@@ -178,10 +165,7 @@ final class DevServerService {
 
     /// Synchronous force-kill used only from `deinit`, where `async` is unavailable.
     private func killAll() {
-        serversLock.lock()
-        let all = servers
-        serversLock.unlock()
-
+        let all = state.withLock { $0 }
         for (optionId, server) in all {
             server.pty.forceKill()
             logger.debug("deinit: force-killed PTY for option \(optionId)")

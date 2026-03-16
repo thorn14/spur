@@ -111,7 +111,6 @@ struct WorktreeSidebarView: View {
             }
         }
         .background(.ultraThinMaterial)
-        .overlay(FilmGrainOverlay())
         .frame(width: 260)
         .sheet(item: $newOptionPrototype) { NewOptionSheet(prototype: $0) }
         .sheet(isPresented: $showNewPrototype) { NewPrototypeSheet() }
@@ -224,8 +223,8 @@ private struct WorktreeCard: View {
         switch option.status {
         case .idle:     return SpurColors.textMuted
         case .running:  return SpurColors.statusRunning
-        case .detached: return .orange
-        case .error:    return .red
+        case .detached: return SpurColors.statusWarning
+        case .error:    return SpurColors.statusError
         }
     }
 }

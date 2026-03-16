@@ -19,7 +19,7 @@ struct FilmStripDivider: View {
             VStack(spacing: 20) {
                 ForEach(0..<holeCount, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: 1.5)
-                        .fill(SpurColors.background.opacity(0.40))
+                        .fill(Color.white.opacity(0.18))
                         .frame(width: 5, height: 4)
                 }
             }

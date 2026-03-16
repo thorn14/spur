@@ -92,7 +92,6 @@ struct RightPanelView: View {
             .background(SpurColors.background)
         }
         .background(.ultraThinMaterial)
-        .overlay(FilmGrainOverlay())
     }
 
     private func noSelectionView(_ message: String) -> some View {
